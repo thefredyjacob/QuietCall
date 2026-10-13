@@ -17,6 +17,10 @@ let localStream = null;
 let joined = false;
 let statsTimer = null;
 let pollLoopRunning = false;
+let iceServers = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+];
 const diagnosticEvents = [];
 const peerDiagnostics = new Map();
 const lastApiLog = new Map();
@@ -120,6 +124,17 @@ async function checkService() {
   }
 }
 
+async function configureIceServers() {
+  try {
+    const result = await post("ice-servers", { roomId, token });
+    const turnServers = Array.isArray(result.iceServers) ? result.iceServers : [];
+    iceServers = [...iceServers, ...turnServers];
+    logEvent("turn-configured", { available: result.turnAvailable, serverCount: turnServers.length });
+  } catch (error) {
+    logEvent("turn-unavailable", { status: error.status, message: error.message, fallback: "STUN direct connection" });
+  }
+}
+
 function send(message) {
   const { type, ...body } = message;
   post(type === "signal" ? "signal" : type, { roomId, token, ...body }).then((result) => {
@@ -201,6 +216,7 @@ async function joinCall() {
     await post("join", { roomId, token });
     logEvent("room-joined");
     joined = true;
+    await configureIceServers();
     send({ type: "ready" });
     showCall();
     setStatus("Waiting for other caller", "Microphone is on.");
@@ -225,7 +241,7 @@ function getPeerConnection(peerId) {
   if (pc) return pc;
 
   pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    iceServers,
   });
   peerConnections.set(peerId, pc);
   peerDiagnostics.set(pc, { connectionState: pc.connectionState, iceConnectionState: pc.iceConnectionState, signalingState: pc.signalingState, localCandidates: [], remoteCandidates: [] });

@@ -9,6 +9,8 @@ const port = Number(process.env.PORT || 3000);
 const rooms = new Map();
 const inviteTtl = 60 * 60 * 1000;
 const inactiveTtl = 60 * 1000;
+let cachedTurnServers = [];
+let turnCacheExpires = 0;
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -71,6 +73,29 @@ function validToken(token) {
   return typeof token === "string" && /^[a-f0-9-]{36}$/i.test(token);
 }
 
+async function getMeteredTurnServers() {
+  if (Date.now() < turnCacheExpires) return cachedTurnServers;
+  const domain = (process.env.METERED_DOMAIN || "notquietcall.metered.live").trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  const apiKey = (process.env.METERED_TURN_API_KEY || "").trim();
+  if (!domain || !apiKey) return [];
+  if (!/^[a-z0-9-]+\.metered\.live$/i.test(domain)) throw new Error("Invalid Metered domain.");
+
+  const url = new URL(`https://${domain}/api/v1/turn/credentials`);
+  url.searchParams.set("apiKey", apiKey);
+  const response = await fetch(url, { signal: AbortSignal.timeout(5000), cache: "no-store" });
+  if (!response.ok) throw new Error(`Metered returned HTTP ${response.status}.`);
+  const result = await response.json();
+  const servers = Array.isArray(result) ? result : result.iceServers;
+  const turnServers = Array.isArray(servers) ? servers.filter((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    return urls.some((entry) => typeof entry === "string" && /^turns?:/i.test(entry)) && server.username && server.credential;
+  }) : [];
+  if (!turnServers.length) throw new Error("Metered returned no usable TURN servers.");
+  cachedTurnServers = turnServers;
+  turnCacheExpires = Date.now() + 60_000;
+  return cachedTurnServers;
+}
+
 async function readJson(request) {
   let body = "";
   for await (const chunk of request) {
@@ -84,7 +109,7 @@ function api(request, response, body) {
   cleanStalePeers();
   const path = new URL(request.url, "http://localhost").pathname;
   if (path === "/api/health" && request.method === "GET") {
-    return json(response, 200, { status: "ok", runtime: process.version, uptimeSeconds: Math.floor(process.uptime()) });
+    return json(response, 200, { status: "ok", runtime: process.version, uptimeSeconds: Math.floor(process.uptime()), turnApiKeyConfigured: Boolean(process.env.METERED_TURN_API_KEY) });
   }
   if (request.method !== "POST") return json(response, 405, { error: "POST required." });
 
@@ -133,6 +158,14 @@ function api(request, response, body) {
     const readyPeers = room.peers.filter((item) => item !== peer && item.joined && item.ready);
     for (const other of readyPeers) sendTo(other, { type: "peer-ready", peerId: peer.token });
     return json(response, 200, { peers: readyPeers.map((item) => item.token) });
+  }
+
+  if (path === "/api/ice-servers") {
+    return getMeteredTurnServers().then((iceServers) => json(response, 200, { iceServers, turnAvailable: iceServers.length > 0 }))
+      .catch((error) => {
+        console.error(JSON.stringify({ type: "turn-credentials-error", error: error.message }));
+        json(response, 502, { error: "Could not load TURN credentials; trying direct connection." });
+      });
   }
 
   if (path === "/api/signal") {
