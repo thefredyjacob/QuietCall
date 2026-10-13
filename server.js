@@ -155,20 +155,20 @@ function api(request, response, body) {
 }
 
 const http = createServer(async (request, response) => {
-  const pathname = new URL(request.url, "http://localhost").pathname;
+  const requestPath = new URL(request.url, "http://localhost").pathname;
   const requestId = randomBytes(6).toString("hex");
   const started = performance.now();
   response.setHeader("X-Request-ID", requestId);
-  if (pathname.startsWith("/api/")) {
+  if (requestPath.startsWith("/api/")) {
     response.on("finish", () => {
-      if (pathname !== "/api/poll" || response.statusCode >= 400) {
-        console.log(JSON.stringify({ type: "api-request", requestId, method: request.method, endpoint: pathname, status: response.statusCode, durationMs: Math.round(performance.now() - started) }));
+      if (requestPath !== "/api/poll" || response.statusCode >= 400) {
+        console.log(JSON.stringify({ type: "api-request", requestId, method: request.method, endpoint: requestPath, status: response.statusCode, durationMs: Math.round(performance.now() - started) }));
       }
     });
     try {
       api(request, response, await readJson(request));
     } catch (error) {
-      console.error(JSON.stringify({ type: "api-error", requestId, endpoint: pathname, error: error.message === "Request too large." ? error.message : "Invalid JSON request." }));
+      console.error(JSON.stringify({ type: "api-error", requestId, endpoint: requestPath, error: error.message === "Request too large." ? error.message : "Invalid JSON request." }));
       json(response, error.message === "Request too large." ? 413 : 400, { error: error.message || "Invalid request." });
     }
     return;
