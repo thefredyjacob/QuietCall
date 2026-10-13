@@ -65,7 +65,7 @@ async function post(path, body) {
 
 function send(message) {
   const { type, ...body } = message;
-  post(type === "signal" ? "signal" : type, body).then((result) => {
+  post(type === "signal" ? "signal" : type, { roomId, token, ...body }).then((result) => {
     if (type === "ready") handleMessage({ type: "ready", peers: result.peers });
   }).catch((error) => {
     if (joined) setStatus("Signaling interrupted", error.message);
