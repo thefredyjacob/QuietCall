@@ -31,6 +31,14 @@
           <button id="hangup" class="danger" hidden>Hang up</button>
           <button id="new-call" class="primary" hidden>New call</button>
         </div>
+        <details id="diagnostics" class="diagnostics">
+          <summary>Connection diagnostics</summary>
+          <div class="diagnostic-actions">
+            <button id="check-service" class="secondary">Check service</button>
+            <button id="copy-diagnostics" class="secondary">Copy report</button>
+          </div>
+          <pre id="diagnostic-report" aria-live="polite"></pre>
+        </details>
       </section>
       <audio id="remote-audio" autoplay playsinline></audio>
       <p class="footnote">Audio travels directly between callers when possible.</p>

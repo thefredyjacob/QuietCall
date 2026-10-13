@@ -17,6 +17,39 @@ let localStream = null;
 let joined = false;
 let statsTimer = null;
 let pollLoopRunning = false;
+const diagnosticEvents = [];
+const peerDiagnostics = new Map();
+const lastApiLog = new Map();
+
+function logEvent(event, details = {}) {
+  const item = { time: new Date().toISOString(), event, ...details };
+  diagnosticEvents.push(item);
+  if (diagnosticEvents.length > 100) diagnosticEvents.shift();
+  console.info("[QuietCall]", event, details);
+  renderDiagnostics();
+}
+
+function logApi(event, details, key) {
+  const now = Date.now();
+  if (now - (lastApiLog.get(key) || 0) < 5000) return;
+  lastApiLog.set(key, now);
+  logEvent(event, details);
+}
+
+function renderDiagnostics() {
+  const report = {
+    capturedAt: new Date().toISOString(),
+    app: "QuietCall",
+    page: `${location.origin}${roomId ? "/call/[redacted]" : "/"}`,
+    browser: navigator.userAgent,
+    secureContext: isSecureContext,
+    online: navigator.onLine,
+    microphoneApiAvailable: Boolean(navigator.mediaDevices?.getUserMedia),
+    events: diagnosticEvents,
+    peers: [...peerDiagnostics.values()],
+  };
+  $("diagnostic-report").textContent = JSON.stringify(report, null, 2);
+}
 
 function getToken(id) {
   const key = `quietcall:${id}`;
@@ -49,18 +82,42 @@ function setStatus(text, message = "") {
 }
 
 async function post(path, body) {
-  const response = await fetch(`/api/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const result = await response.json();
-  if (!response.ok) {
-    const error = new Error(result.error || "Call service error.");
-    error.status = response.status;
+  const started = performance.now();
+  try {
+    const response = await fetch(`/api/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    let result;
+    try { result = await response.json(); }
+    catch { result = { error: `Server returned a non-JSON response (HTTP ${response.status}).` }; }
+    const requestId = response.headers.get("x-request-id") || undefined;
+    if (path !== "poll" || !response.ok) logApi("api", { endpoint: path, status: response.status, ms: Math.round(performance.now() - started), requestId }, `${path}:${response.status}`);
+    if (!response.ok) {
+      const error = new Error(result.error || "Call service error.");
+      error.status = response.status;
+      error.requestId = requestId;
+      logApi("api-error", { endpoint: path, status: response.status, message: error.message, requestId }, `error:${path}:${response.status}`);
+      $("diagnostics").open = true;
+      throw error;
+    }
+    return result;
+  } catch (error) {
+    if (!error.status) logApi("api-network-error", { endpoint: path, message: error.message }, `network:${path}`);
     throw error;
   }
-  return result;
+}
+
+async function checkService() {
+  const started = performance.now();
+  try {
+    const response = await fetch("/api/health", { cache: "no-store" });
+    const result = await response.json();
+    logEvent("service-check", { status: response.status, ms: Math.round(performance.now() - started), server: result });
+  } catch (error) {
+    logEvent("service-check-failed", { message: error.message });
+  }
 }
 
 function send(message) {
@@ -120,7 +177,9 @@ async function createCall() {
     history.replaceState(null, "", `/call/${roomId}`);
     showCall();
     setStatus("Waiting for invitee", "Invite link expires after one hour if unused.");
+    logEvent("room-created");
   } catch (error) {
+    logEvent("room-create-failed", { message: error.message, status: error.status });
     $("create").disabled = false;
     showHome();
     $("home-error").textContent = `Could not create call: ${error.message}`;
@@ -129,13 +188,18 @@ async function createCall() {
 
 async function joinCall() {
   joinButton.disabled = true;
+  logEvent("microphone-requested");
   setStatus("Allow microphone access", "Your browser will ask for microphone permission.");
   try {
     localStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       video: false,
     });
+    const track = localStream.getAudioTracks()[0];
+    const settings = track?.getSettings() || {};
+    logEvent("microphone-ready", { settings: Object.fromEntries(["sampleRate", "channelCount", "echoCancellation", "noiseSuppression", "autoGainControl"].filter((key) => settings[key] !== undefined).map((key) => [key, settings[key]])), enabled: track?.enabled });
     await post("join", { roomId, token });
+    logEvent("room-joined");
     joined = true;
     send({ type: "ready" });
     showCall();
@@ -143,6 +207,7 @@ async function joinCall() {
     startStats();
     pollLoop();
   } catch (error) {
+    logEvent("join-failed", { name: error.name, message: error.message, status: error.status });
     localStream?.getTracks().forEach((track) => track.stop());
     localStream = null;
     joinButton.disabled = false;
@@ -163,6 +228,7 @@ function getPeerConnection(peerId) {
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
   });
   peerConnections.set(peerId, pc);
+  peerDiagnostics.set(pc, { connectionState: pc.connectionState, iceConnectionState: pc.iceConnectionState, signalingState: pc.signalingState, localCandidates: [], remoteCandidates: [] });
   for (const track of localStream?.getTracks() || []) pc.addTrack(track, localStream);
   const transceiver = pc.getTransceivers().find((item) => item.sender.track?.kind === "audio");
   const codecs = RTCRtpSender.getCapabilities?.("audio")?.codecs || [];
@@ -170,16 +236,49 @@ function getPeerConnection(peerId) {
   if (opus.length && transceiver?.setCodecPreferences) {
     try { transceiver.setCodecPreferences([...opus, ...codecs.filter((codec) => !opus.includes(codec))]); } catch {}
   }
-  pc.onicecandidate = ({ candidate }) => candidate && signal(peerId, { candidate });
+  pc.onicecandidate = ({ candidate }) => {
+    if (!candidate) return logEvent("ice-gathering-complete");
+    const type = candidate.candidate.match(/\btyp\s+(host|srflx|prflx|relay)\b/)?.[1] || "unknown";
+    const info = peerDiagnostics.get(pc);
+    if (!info.localCandidates.includes(type)) info.localCandidates.push(type);
+    logEvent("ice-local-candidate", { type });
+    signal(peerId, { candidate });
+  };
+  pc.onicecandidateerror = ({ errorCode }) => logEvent("ice-candidate-error", { code: errorCode });
+  pc.oniceconnectionstatechange = () => {
+    const info = peerDiagnostics.get(pc);
+    info.iceConnectionState = pc.iceConnectionState;
+    logEvent("ice-state", { state: pc.iceConnectionState });
+  };
+  pc.onsignalingstatechange = () => {
+    const info = peerDiagnostics.get(pc);
+    info.signalingState = pc.signalingState;
+    logEvent("signaling-state", { state: pc.signalingState });
+  };
+  pc.onicegatheringstatechange = () => {
+    const info = peerDiagnostics.get(pc);
+    info.iceGatheringState = pc.iceGatheringState;
+    logEvent("ice-gathering-state", { state: pc.iceGatheringState });
+  };
   pc.ontrack = ({ streams }) => {
     remoteAudio.srcObject = streams[0];
-    remoteAudio.play().catch(() => setStatus("Tap to hear", "Your browser blocked audio playback."));
+    logEvent("remote-audio-track", { streamCount: streams.length });
+    remoteAudio.play().catch((error) => { logEvent("audio-playback-blocked", { message: error.message }); setStatus("Tap to hear", "Your browser blocked audio playback."); });
   };
   pc.onconnectionstatechange = () => {
+    const info = peerDiagnostics.get(pc);
+    info.connectionState = pc.connectionState;
+    logEvent("peer-connection-state", { state: pc.connectionState });
     if (pc.connectionState === "connected") updateConnectionType(pc);
     else if (pc.connectionState === "connecting") setStatus("Connecting");
     else if (pc.connectionState === "disconnected") setStatus("Reconnecting");
-    else if (pc.connectionState === "failed") setStatus("Connection failed", "Try another network or add TURN relay support.");
+    else if (pc.connectionState === "failed") {
+      $("diagnostics").open = true;
+      const info = peerDiagnostics.get(pc);
+      const noRelay = ![...(info.localCandidates || []), ...(info.remoteCandidates || [])].includes("relay");
+      setStatus("Connection failed", "Open connection diagnostics to see where setup stopped.");
+      logEvent("connection-failed", { hint: pc.iceConnectionState === "failed" && noRelay ? "ICE failed without relay candidates; a TURN path may be needed." : "Inspect the recorded ICE and signaling states." });
+    }
   };
   return pc;
 }
@@ -201,8 +300,10 @@ async function beginPeer(peerId) {
     await limitAudioBitrate(pc);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
+    logEvent("offer-created");
     signal(peerId, { description: pc.localDescription });
-  } catch {
+  } catch (error) {
+    logEvent("offer-failed", { name: error.name, message: error.message });
     setStatus("Could not start audio", "Refresh and try again.");
   }
 }
@@ -212,6 +313,7 @@ async function handleSignal(from, value) {
   const pc = getPeerConnection(from);
   try {
     if (value.description) {
+      logEvent("description-received", { type: value.description.type });
       await pc.setRemoteDescription(value.description);
       for (const candidate of pendingCandidates.get(from) || []) await pc.addIceCandidate(candidate);
       pendingCandidates.delete(from);
@@ -222,27 +324,56 @@ async function handleSignal(from, value) {
         signal(from, { description: pc.localDescription });
       }
     } else if (value.candidate) {
+      const type = value.candidate.candidate.match(/\btyp\s+(host|srflx|prflx|relay)\b/)?.[1] || "unknown";
+      const info = peerDiagnostics.get(pc);
+      if (!info.remoteCandidates.includes(type)) info.remoteCandidates.push(type);
+      logEvent("ice-remote-candidate", { type });
       if (pc.remoteDescription) await pc.addIceCandidate(value.candidate);
       else pendingCandidates.set(from, [...(pendingCandidates.get(from) || []), value.candidate]);
     }
-  } catch {
+  } catch (error) {
+    logEvent("signal-processing-failed", { name: error.name, message: error.message });
     setStatus("Connection setup failed", "Try joining the call again.");
   }
 }
 
 async function updateConnectionType(pc) {
-  const stats = await pc.getStats();
+  let stats;
+  try { stats = await pc.getStats(); }
+  catch (error) { logApi("stats-failed", { name: error.name, message: error.message }, "stats-failed"); return; }
   let relayed = false;
   let weak = false;
+  let audio = {};
+  let selectedPair = null;
   for (const report of stats.values()) {
-    if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) {
+    if (report.type === "transport" && report.selectedCandidatePairId) selectedPair = stats.get(report.selectedCandidatePairId);
+  }
+  for (const report of stats.values()) {
+    if (report.type === "candidate-pair" && report.state === "succeeded" && (report.selected || report.nominated)) {
+      selectedPair ||= report;
+    }
+    if (report === selectedPair) {
       const local = stats.get(report.localCandidateId);
       const remote = stats.get(report.remoteCandidateId);
       relayed = local?.candidateType === "relay" || remote?.candidateType === "relay";
       weak ||= report.currentRoundTripTime > 0.6;
+      audio.rttMs = Math.round((report.currentRoundTripTime || 0) * 1000);
     }
-    if (report.type === "remote-inbound-rtp" && report.kind === "audio") weak ||= report.fractionLost > 0.05;
+    if (report.kind === "audio" && (report.type === "inbound-rtp" || report.type === "outbound-rtp")) {
+      const direction = report.type === "inbound-rtp" ? "received" : "sent";
+      audio[`${direction}Bytes`] = report.bytesReceived ?? report.bytesSent ?? 0;
+      audio[`${direction}Packets`] = report.packetsReceived ?? report.packetsSent ?? 0;
+      if (report.type === "inbound-rtp") audio.jitterMs = Math.round((report.jitter || 0) * 1000);
+    }
+    if (report.type === "remote-inbound-rtp" && report.kind === "audio") {
+      audio.packetLossPercent = Math.round((report.fractionLost || 0) * 1000) / 10;
+      weak ||= report.fractionLost > 0.05;
+    }
+    if (report.type === "codec" && report.mimeType?.startsWith("audio/")) audio.codec = report.mimeType;
   }
+  const info = peerDiagnostics.get(pc);
+  if (info) Object.assign(info, { connectionState: pc.connectionState, iceConnectionState: pc.iceConnectionState, audio });
+  renderDiagnostics();
   setStatus(weak ? "Weak connection" : `Connected · ${relayed ? "Relayed" : "Direct"}`, weak ? "High delay or packet loss may affect speech." : "");
 }
 
@@ -292,6 +423,18 @@ function hangUp() {
 
 $("create").addEventListener("click", createCall);
 joinButton.addEventListener("click", joinCall);
+$("check-service").addEventListener("click", checkService);
+$("copy-diagnostics").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("diagnostic-report").textContent);
+    $("copy-diagnostics").textContent = "Report copied";
+    setTimeout(() => { $("copy-diagnostics").textContent = "Copy report"; }, 2000);
+  } catch (error) {
+    logEvent("diagnostic-copy-failed", { message: error.message });
+  }
+});
+window.addEventListener("online", () => logEvent("browser-online"));
+window.addEventListener("offline", () => logEvent("browser-offline"));
 $("copy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(location.href);
@@ -317,3 +460,4 @@ if (roomId) {
 } else {
   showHome();
 }
+logEvent("app-loaded", { protocol: location.protocol });
