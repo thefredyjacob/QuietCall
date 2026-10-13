@@ -1,0 +1,54 @@
+:root {
+  color-scheme: dark;
+  font: 16px/1.5 system-ui, sans-serif;
+  background: #101612;
+  color: #edf4ed;
+  --muted: #9eaaa0;
+  --green: #baf27b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100svh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: radial-gradient(ellipse at 50% 5%, #1d2b20, #101612 65%);
+}
+
+.card {
+  width: min(100%, 440px);
+  padding: 34px;
+  border: 1px solid #344239;
+  border-radius: 22px;
+  background: #171f19;
+  box-shadow: 0 24px 90px #0005;
+}
+
+.brand { color: var(--green); font-size: 14px; font-weight: 700; letter-spacing: .04em; }
+.brand-mark { margin-right: 7px; font-size: 11px; }
+h1 { margin: 30px 0 8px; font-size: clamp(27px, 7vw, 34px); line-height: 1.14; letter-spacing: -.04em; }
+.subhead, .detail, .footnote { color: var(--muted); }
+.subhead { margin: 0 0 28px; }
+.panel { min-height: 136px; padding-top: 8px; }
+.status { min-height: 28px; margin: 8px 0 2px; font-weight: 650; }
+.detail { min-height: 24px; margin: 0 0 18px; font-size: 14px; }
+.controls, .invite { display: flex; gap: 10px; flex-wrap: wrap; }
+button { min-height: 48px; padding: 0 18px; border: 0; border-radius: 12px; font: inherit; font-weight: 650; cursor: pointer; }
+button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+button:disabled { cursor: wait; opacity: .6; }
+.primary { color: #15200f; background: var(--green); }
+.secondary { color: #e7eee7; background: #2b372e; border: 1px solid #415047; }
+.danger { color: #fff; background: #7a3933; }
+.controls > button { flex: 1; }
+.invite { margin: 0 0 12px; }
+.footnote { margin: 24px 0 0; font-size: 12px; }
+audio { display: none; }
+[hidden] { display: none !important; }
+
+@media (max-width: 420px) {
+  .card { padding: 27px 22px; }
+}
