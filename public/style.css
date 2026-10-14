@@ -166,7 +166,7 @@ audio { display: none; }
   .invite .secondary { width: 100%; }
   .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
   .controls > button { min-width: 0; width: 100%; padding: 0 12px; }
-  .controls > button:only-child { grid-column: 1 / -1; }
+  .controls > #join, .controls > #new-call { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
