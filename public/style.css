@@ -45,9 +45,6 @@ button:disabled { cursor: wait; opacity: .6; }
 .danger { color: #fff; background: #7a3933; }
 .controls > button { flex: 1; }
 .invite { margin: 0 0 12px; }
-.remote-mute { margin-top: -8px; color: var(--green); }
-.audio-output { display: grid; gap: 6px; margin: 0 0 12px; color: var(--muted); font-size: 14px; }
-.audio-output select { width: 100%; color: #e7eee7; background: #2b372e; border: 1px solid #415047; }
 .diagnostics { margin-top: 16px; color: var(--muted); font-size: 13px; }
 .diagnostics summary { cursor: pointer; }
 .diagnostic-actions { display: flex; gap: 8px; margin: 10px 0; }
