@@ -109,6 +109,7 @@ h1 { margin: 0; font-size: clamp(48px, 7.6vw, 82px); font-weight: 620; line-heig
 .connection-indicator { width: 8px; height: 8px; flex: 0 0 auto; border: 1.5px solid var(--accent); border-radius: 50%; }
 .status { margin: 0; color: #e1e9e3; font-size: 13px; font-weight: 600; }
 .call-detail { min-height: 24px; margin: 11px 0 21px; font-size: 14px; }
+.foreground-hint { margin: -12px 0 18px; padding-left: 11px; border-left: 2px solid var(--accent); color: var(--muted); font-size: 12px; }
 .call-stage { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .participant { position: relative; display: flex; min-height: 270px; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #3b4a42; border-radius: 20px; background: radial-gradient(ellipse at 50% 38%, #2b3931, #202a25 68%); }
 .participant-guest { background: radial-gradient(ellipse at 50% 38%, #373b33, #242b26 68%); }

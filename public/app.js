@@ -15,6 +15,8 @@ let roomId = location.pathname.match(/^\/call\/([a-zA-Z0-9_-]+)\/?$/)?.[1] || nu
 let token = roomId ? getToken(roomId) : null;
 let localStream = null;
 let joined = false;
+let screenWakeLock = null;
+let hiddenAt = null;
 let statsTimer = null;
 let pollLoopRunning = false;
 let iceServers = [
@@ -124,6 +126,54 @@ async function checkService() {
   }
 }
 
+async function requestScreenWakeLock(resumed = false) {
+  if (document.visibilityState !== "visible" || (screenWakeLock && !screenWakeLock.released)) return;
+  if (!navigator.wakeLock?.request) {
+    $("foreground-hint").textContent = "Keep QuietCall open and screen on for best call stability.";
+    $("foreground-hint").hidden = false;
+    logEvent("screen-wake-lock-unavailable", { reason: "unsupported" });
+    return;
+  }
+  try {
+    const lock = await navigator.wakeLock.request("screen");
+    screenWakeLock = lock;
+    $("foreground-hint").textContent = resumed
+      ? "Welcome back. Keep QuietCall open and check connection status."
+      : "Screen stays awake while QuietCall is open.";
+    $("foreground-hint").hidden = false;
+    logEvent("screen-wake-lock", { state: "active" });
+    lock.addEventListener("release", () => {
+      if (screenWakeLock === lock) screenWakeLock = null;
+      logEvent("screen-wake-lock", { state: "released" });
+      if (joined && document.visibilityState === "visible") {
+        $("foreground-hint").textContent = "Keep QuietCall open and screen on for best call stability.";
+      }
+    }, { once: true });
+  } catch (error) {
+    $("foreground-hint").textContent = "Keep QuietCall open and screen on for best call stability.";
+    $("foreground-hint").hidden = false;
+    logEvent("screen-wake-lock-unavailable", { name: error.name, message: error.message });
+  }
+}
+
+function releaseScreenWakeLock() {
+  screenWakeLock?.release().catch(() => {});
+  screenWakeLock = null;
+  $("foreground-hint").hidden = true;
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    hiddenAt = Date.now();
+    logEvent("page-hidden", { joined });
+  } else {
+    logEvent("page-visible", { joined, hiddenForMs: hiddenAt === null ? 0 : Date.now() - hiddenAt });
+    const resumed = hiddenAt !== null;
+    hiddenAt = null;
+    if (joined) requestScreenWakeLock(resumed);
+  }
+});
+
 async function configureIceServers() {
   try {
     const result = await post("ice-servers", { roomId, token });
@@ -159,6 +209,7 @@ async function pollLoop() {
         localStream?.getTracks().forEach((track) => track.stop());
         localStream = null;
         joined = false;
+        releaseScreenWakeLock();
         showCall();
         joinButton.disabled = false;
         setStatus(error.status === 404 ? "Call link expired" : "Rejoin call", error.message);
@@ -203,6 +254,7 @@ async function createCall() {
 
 async function joinCall() {
   joinButton.disabled = true;
+  await requestScreenWakeLock();
   logEvent("microphone-requested");
   setStatus("Allow microphone access", "Your browser will ask for microphone permission.");
   try {
@@ -216,6 +268,7 @@ async function joinCall() {
     await post("join", { roomId, token });
     logEvent("room-joined");
     joined = true;
+    await requestScreenWakeLock();
     await configureIceServers();
     send({ type: "ready" });
     showCall();
@@ -224,6 +277,7 @@ async function joinCall() {
     pollLoop();
   } catch (error) {
     logEvent("join-failed", { name: error.name, message: error.message, status: error.status });
+    releaseScreenWakeLock();
     localStream?.getTracks().forEach((track) => track.stop());
     localStream = null;
     joinButton.disabled = false;
@@ -428,6 +482,7 @@ function hangUp() {
   localStream = null;
   remoteAudio.srcObject = null;
   joined = false;
+  releaseScreenWakeLock();
   showCall();
   joinButton.disabled = false;
   joinButton.hidden = true;
