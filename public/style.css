@@ -77,7 +77,7 @@ h1 { margin: 0; font-size: clamp(46px, 6.8vw, 72px); font-weight: 620; line-heig
 .create-button { display: inline-flex; min-height: 58px; align-items: center; gap: 28px; padding: 0 19px 0 23px; color: #17221c; background: var(--accent-bright); }
 .create-button svg { width: 19px; height: 19px; }
 .create-button:hover, .primary:hover { background: #d1e4d5; }
-.detail { color: var(--muted); }
+.detail { color: var(--muted); overflow-wrap: anywhere; }
 .home-error { min-height: 24px; max-width: 34rem; margin: 14px 0 0; font-size: 14px; }
 
 .home-visual { display: flex; min-height: 300px; flex-direction: column; justify-content: center; padding: clamp(24px, 5vw, 52px); border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
@@ -106,7 +106,7 @@ h1 { margin: 0; font-size: clamp(46px, 6.8vw, 72px); font-weight: 620; line-heig
 .connection-chip[data-state="connected"] .connection-indicator { border-color: var(--accent-bright); background: var(--accent-bright); }
 .connection-chip[data-state="warning"] .connection-indicator { border-color: #e4c580; background: #e4c580; }
 .connection-chip[data-state="error"] .connection-indicator { border-color: #e28b81; background: #e28b81; }
-.status { margin: 0; color: #e1e9e3; font-size: 13px; font-weight: 600; }
+.status { min-width: 0; margin: 0; color: #e1e9e3; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .call-detail { min-height: 24px; margin: 11px 0 21px; font-size: 14px; }
 .foreground-hint { margin: -12px 0 18px; padding-left: 11px; border-left: 2px solid var(--accent); color: var(--muted); font-size: 12px; }
 .call-stage { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -150,6 +150,11 @@ audio { display: none; }
   .connection-chip { margin: 0; }
 }
 
+@media (max-width: 560px) {
+  .participant-name { right: 12px; bottom: 13px; left: 12px; align-items: flex-start; flex-direction: column; gap: 0; }
+  .participant-name span { text-align: left; }
+}
+
 @media (max-width: 440px) {
   body { padding: 20px 16px; }
   .topbar { margin-bottom: 30px; }
@@ -157,8 +162,6 @@ audio { display: none; }
   .call-stage { gap: 8px; }
   .participant { min-height: 218px; border-radius: 16px; }
   .participant-tag { top: 12px; left: 12px; }
-  .participant-name { right: 12px; bottom: 13px; left: 12px; align-items: flex-start; flex-direction: column; gap: 0; }
-  .participant-name span { text-align: left; }
   .invite { align-items: stretch; flex-direction: column; }
   .invite .secondary { width: 100%; }
   .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
