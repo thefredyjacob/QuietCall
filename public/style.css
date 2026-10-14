@@ -51,10 +51,17 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.99); }
 .skip-link { position: fixed; top: 12px; left: 12px; z-index: 2; transform: translateY(-160%); padding: 10px 14px; border-radius: 8px; background: var(--accent-bright); color: #18211e; }
 .skip-link:focus { transform: translateY(0); }
 
-.participant-name, .connection-chip, .invite, .invite-copy, .controls {
+.topbar, .brand, .participant-name, .connection-chip, .invite, .invite-copy, .controls {
   display: flex;
   align-items: center;
 }
+
+.topbar { margin-bottom: clamp(28px, 5vh, 52px); }
+.brand { gap: 10px; color: var(--text); text-decoration: none; font-size: 15px; font-weight: 700; letter-spacing: .04em; }
+.brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #476052; border-radius: 10px; color: var(--accent-bright); background: #213029; }
+.brand-mark svg { width: 18px; height: 18px; }
+.brand-home { margin-left: 3px; color: var(--muted); font-size: 13px; font-weight: 500; letter-spacing: 0; }
+.brand:hover .brand-home { color: var(--accent-bright); }
 
 .eyebrow, .participant-tag, .invite-label {
   font-size: 11px;
@@ -133,6 +140,7 @@ audio { display: none; }
 @media (max-width: 720px) {
   body { align-items: start; padding: 24px 20px; }
   .app-shell { margin: auto; }
+  .topbar { margin-bottom: 36px; }
   .home-panel { grid-template-columns: 1fr; gap: 34px; }
   .home-copy { max-width: 520px; padding: 0; }
   h1 { font-size: clamp(52px, 12vw, 76px); }
@@ -144,6 +152,7 @@ audio { display: none; }
 
 @media (max-width: 440px) {
   body { padding: 20px 16px; }
+  .topbar { margin-bottom: 30px; }
   .home-visual { min-height: 190px; padding: 24px; border-radius: 16px; }
   .call-stage { gap: 8px; }
   .participant { min-height: 218px; border-radius: 16px; }
