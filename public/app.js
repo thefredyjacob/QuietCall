@@ -84,6 +84,14 @@ function showCall() {
 
 function setStatus(text, message = "") {
   status.textContent = text;
+  const state = text.toLowerCase();
+  status.closest(".connection-chip").dataset.state = state.includes("connected")
+    ? "connected"
+    : /failed|ended|expired|could not/.test(state)
+      ? "error"
+      : /weak|reconnect|interrupted/.test(state)
+        ? "warning"
+        : "waiting";
   detail.textContent = message;
 }
 
