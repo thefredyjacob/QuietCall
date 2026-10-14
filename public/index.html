@@ -3,34 +3,96 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#101612">
-    <title>QuietCall</title>
+    <meta name="theme-color" content="#111816">
+    <meta name="description" content="QuietCall makes simple, private one-to-one voice calls.">
+    <title>QuietCall — clear voice, simple call</title>
     <link rel="stylesheet" href="/style.css">
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <main class="card">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">●</span> quietcall</div>
-      <h1>Clear voice. Simple call.</h1>
-      <p class="subhead">One-to-one voice calls. No account needed.</p>
+    <a class="skip-link" href="#main-content">Skip to call controls</a>
+    <main class="app-shell" id="main-content" tabindex="-1">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="QuietCall home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 10v4m4-8v12m4-15v18m4-13v8m4-5v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </span>
+          <span>quietcall</span>
+        </a>
+        <span class="top-note">ONE-TO-ONE · AUDIO ONLY</span>
+      </header>
 
-      <section id="home" class="panel" hidden>
-        <button id="create" class="primary">Create a call</button>
-        <p id="home-error" class="detail" role="status" aria-live="polite"></p>
+      <section id="home" class="home-panel" hidden>
+        <div class="home-copy">
+          <p class="eyebrow">A quieter way to connect</p>
+          <h1>Clear voice.<br>Simple call.</h1>
+          <p class="subhead">One-to-one voice calls. No account needed.</p>
+          <button id="create" class="primary create-button">
+            Create a call
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <p id="home-error" class="detail home-error" role="status" aria-live="polite"></p>
+        </div>
+
+        <aside class="preview-stage" aria-label="Preview of the two-person voice call">
+          <div class="preview-caption"><span>MADE FOR CONVERSATION</span><span>01 — 02</span></div>
+          <div class="voice-tiles">
+            <article class="voice-tile tile-you">
+              <span class="tile-tag">YOU</span>
+              <div class="voice-orb" aria-hidden="true"><span class="wave-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+              <div class="tile-caption"><strong>Your voice</strong><span>Private by design</span></div>
+            </article>
+            <article class="voice-tile tile-guest">
+              <span class="tile-tag">INVITEE</span>
+              <div class="voice-orb guest-orb" aria-hidden="true"><span class="wave-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+              <div class="tile-caption"><strong>One other person</strong><span>Join with a link</span></div>
+            </article>
+          </div>
+          <div class="preview-foot"><span class="preview-line"></span><span>No video. No distractions.</span></div>
+        </aside>
       </section>
 
-      <section id="call" class="panel" hidden>
-        <p id="status" class="status" role="status" aria-live="polite">Preparing call…</p>
-        <p id="detail" class="detail"></p>
+      <section id="call" class="call-panel" hidden>
+        <div class="call-heading">
+          <div>
+            <p class="eyebrow">YOUR PRIVATE ROOM</p>
+            <h1>Voice call</h1>
+          </div>
+          <div class="connection-chip">
+            <span class="connection-indicator" aria-hidden="true"></span>
+            <p id="status" class="status" role="status" aria-live="polite">Preparing call…</p>
+          </div>
+        </div>
+        <p id="detail" class="detail call-detail"></p>
+
+        <section class="call-stage" aria-label="Call participants">
+          <article class="participant participant-you">
+            <span class="participant-tag">YOU</span>
+            <div class="participant-orb" aria-hidden="true"><span class="wave-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+            <div class="participant-name"><strong>You</strong><span>This device</span></div>
+          </article>
+          <article class="participant participant-guest">
+            <span class="participant-tag">INVITEE</span>
+            <div class="participant-orb guest-orb" aria-hidden="true"><span class="wave-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+            <div class="participant-name"><strong>Other caller</strong><span>Voice connection</span></div>
+          </article>
+        </section>
+
         <div id="invite" class="invite" hidden>
+          <div class="invite-copy"><span class="invite-label">CALL LINK</span><span class="invite-help">Share with one person</span></div>
           <button id="copy" class="secondary">Copy invite link</button>
         </div>
+
         <div class="controls">
           <button id="join" class="primary" hidden>Join call</button>
           <button id="mute" class="secondary" hidden>Mute</button>
-          <button id="hangup" class="danger" hidden>Hang up</button>
+          <button id="hangup" class="danger" hidden>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4 15.5c4.8-4 11.2-4 16 0l-2.1 3.1a1.5 1.5 0 0 1-1.8.5l-2.3-1a1.5 1.5 0 0 1-.9-1.4v-1.1a13 13 0 0 0-1.8-.1 13 13 0 0 0-1.8.1v1.1a1.5 1.5 0 0 1-.9 1.4l-2.3 1a1.5 1.5 0 0 1-1.8-.5L4 15.5Z" fill="currentColor"/></svg>
+            Hang up
+          </button>
           <button id="new-call" class="primary" hidden>New call</button>
         </div>
+
         <details id="diagnostics" class="diagnostics">
           <summary>Connection diagnostics</summary>
           <div class="diagnostic-actions">
@@ -41,7 +103,7 @@
         </details>
       </section>
       <audio id="remote-audio" autoplay playsinline></audio>
-      <p class="footnote">Audio travels directly between callers when possible.</p>
+      <footer class="page-foot"><span>QUIETCALL</span><span>Clear voice, less noise.</span></footer>
     </main>
   </body>
 </html>
