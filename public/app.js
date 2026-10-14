@@ -9,6 +9,10 @@ const muteButton = $("mute");
 const hangupButton = $("hangup");
 const newCallButton = $("new-call");
 const remoteAudio = $("remote-audio");
+const remoteMute = $("remote-mute");
+const audioOutputControl = $("audio-output-control");
+const audioOutput = $("audio-output");
+const audioOutputNote = $("audio-output-note");
 const peerConnections = new Map();
 const pendingCandidates = new Map();
 let roomId = location.pathname.match(/^\/call\/([a-zA-Z0-9_-]+)\/?$/)?.[1] || null;
@@ -17,6 +21,7 @@ let localStream = null;
 let joined = false;
 let statsTimer = null;
 let pollLoopRunning = false;
+let remotePeerId = null;
 let iceServers = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun.cloudflare.com:3478" },
@@ -78,6 +83,37 @@ function showCall() {
   muteButton.hidden = !joined;
   hangupButton.hidden = !roomId || !joined;
   newCallButton.hidden = Boolean(roomId);
+}
+
+async function refreshAudioOutputs() {
+  if (!joined) return;
+  audioOutputControl.hidden = false;
+  audioOutputNote.hidden = false;
+  if (typeof remoteAudio.setSinkId !== "function") {
+    audioOutput.disabled = true;
+    audioOutput.replaceChildren(new Option("System default", ""));
+    audioOutputNote.textContent = "This browser does not support choosing an audio output.";
+    return;
+  }
+  try {
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audiooutput");
+    const selectable = devices.filter((device) => device.deviceId !== "default");
+    const selected = audioOutput.value;
+    audioOutput.replaceChildren(new Option("System default", ""));
+    selectable.forEach((device, index) => audioOutput.add(new Option(device.label || `Audio output ${index + 1}`, device.deviceId)));
+    if ([...audioOutput.options].some((option) => option.value === selected)) audioOutput.value = selected;
+    audioOutput.disabled = selectable.length === 0;
+    audioOutputNote.textContent = selectable.length ? "Choose speaker or headphones." : "No other output devices are available.";
+  } catch (error) {
+    audioOutput.disabled = true;
+    audioOutputNote.textContent = "Could not list audio output devices.";
+    logEvent("audio-output-list-failed", { name: error.name, message: error.message });
+  }
+}
+
+function syncMuteState(peerId) {
+  const track = localStream?.getAudioTracks()[0];
+  if (peerId && track) signal(peerId, { muteState: !track.enabled });
 }
 
 function setStatus(text, message = "") {
@@ -159,6 +195,10 @@ async function pollLoop() {
         localStream?.getTracks().forEach((track) => track.stop());
         localStream = null;
         joined = false;
+        remotePeerId = null;
+        remoteMute.hidden = true;
+        audioOutputControl.hidden = true;
+        audioOutputNote.hidden = true;
         showCall();
         joinButton.disabled = false;
         setStatus(error.status === 404 ? "Call link expired" : "Rejoin call", error.message);
@@ -222,6 +262,7 @@ async function joinCall() {
     setStatus("Waiting for other caller", "Microphone is on.");
     startStats();
     pollLoop();
+    refreshAudioOutputs();
   } catch (error) {
     logEvent("join-failed", { name: error.name, message: error.message, status: error.status });
     localStream?.getTracks().forEach((track) => track.stop());
@@ -310,6 +351,8 @@ async function limitAudioBitrate(pc) {
 
 async function beginPeer(peerId) {
   if (!joined || !localStream || token.localeCompare(peerId) >= 0) return;
+  remotePeerId = peerId;
+  syncMuteState(peerId);
   const pc = getPeerConnection(peerId);
   if (pc.localDescription) return;
   try {
@@ -326,6 +369,16 @@ async function beginPeer(peerId) {
 
 async function handleSignal(from, value) {
   if (!joined) return;
+  if (remotePeerId !== from) {
+    remotePeerId = from;
+    syncMuteState(from);
+  }
+  if (typeof value.muteState === "boolean") {
+    remoteMute.textContent = value.muteState ? "Other caller is muted" : "Other caller is not muted";
+    remoteMute.hidden = false;
+    logEvent("remote-mute-changed", { muted: value.muteState });
+    return;
+  }
   const pc = getPeerConnection(from);
   try {
     if (value.description) {
@@ -414,6 +467,8 @@ function handleMessage(message) {
     peerConnections.delete(message.peerId);
     pendingCandidates.delete(message.peerId);
     remoteAudio.srcObject = null;
+    remotePeerId = null;
+    remoteMute.hidden = true;
     setStatus("Waiting for other caller", "They can rejoin from the same link.");
   }
 }
@@ -428,6 +483,10 @@ function hangUp() {
   localStream = null;
   remoteAudio.srcObject = null;
   joined = false;
+  remotePeerId = null;
+  remoteMute.hidden = true;
+  audioOutputControl.hidden = true;
+  audioOutputNote.hidden = true;
   showCall();
   joinButton.disabled = false;
   joinButton.hidden = true;
@@ -465,7 +524,20 @@ muteButton.addEventListener("click", () => {
   if (!track) return;
   track.enabled = !track.enabled;
   muteButton.textContent = track.enabled ? "Mute" : "Unmute";
+  logEvent("local-mute-changed", { muted: !track.enabled });
+  syncMuteState(remotePeerId);
 });
+audioOutput.addEventListener("change", async () => {
+  try {
+    await remoteAudio.setSinkId(audioOutput.value);
+    audioOutputNote.textContent = "Audio output changed.";
+    logEvent("audio-output-changed", { selected: audioOutput.value ? "device" : "default" });
+  } catch (error) {
+    audioOutputNote.textContent = "Could not change audio output.";
+    logEvent("audio-output-change-failed", { name: error.name, message: error.message });
+  }
+});
+if (navigator.mediaDevices?.addEventListener) navigator.mediaDevices.addEventListener("devicechange", refreshAudioOutputs);
 hangupButton.addEventListener("click", () => hangUp());
 newCallButton.addEventListener("click", () => { history.replaceState(null, "", "/"); location.reload(); });
 

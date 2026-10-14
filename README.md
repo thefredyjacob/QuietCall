@@ -21,6 +21,8 @@ Push this repository to GitHub, then import it as a Hostinger Node.js Web App. S
 - Unused rooms expire after one hour. Participants time out after 60 seconds without signaling polls; a room with one remaining participant expires after one hour.
 - HTTP polling carries signaling only. WebRTC carries audio directly when possible.
 - Audio uses mono Opus, browser audio processing, and a 24 kbps sender cap. Browser and network support affect the actual bitrate and quality.
+- In-call audio output picker lists browser-exposed devices after microphone permission. Browser support limits device switching, especially on mobile.
+- The app shows the other caller's mute-button state through signaling; it cannot detect hardware or operating-system microphone mute.
 - Google and Cloudflare STUN plus Metered Open Relay TURN fallback. Direct media remains peer-to-peer when possible; TURN relays only calls that need it.
 - Anyone with the invite link can try to join. Share links privately.
 
