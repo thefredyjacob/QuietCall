@@ -84,7 +84,6 @@ h1 { margin: 0; font-size: clamp(46px, 6.8vw, 72px); font-weight: 620; line-heig
 .voice-node-guest { border-color: #6c7160; background: #2b2e26; }
 .voice-node-guest .wave-bars i { background: #e1e0c3; }
 .voice-connector { height: 1px; flex: 1 1 auto; background: #66766a; }
-.visual-copy { display: flex; justify-content: space-between; gap: 12px; margin-top: 26px; color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .09em; }
 .participant-tag { position: absolute; top: 16px; left: 16px; color: #d4e2d7; font-size: 9px; }
 .participant-orb { display: grid; width: 110px; aspect-ratio: 1; place-items: center; border: 1px solid #53675a; border-radius: 50%; background: #243129; }
 .guest-orb { border-color: #666958; background: #2c3028; }
@@ -156,7 +155,6 @@ audio { display: none; }
   .topbar { margin-bottom: 36px; }
   .top-note { font-size: 9px; }
   .home-visual { min-height: 190px; padding: 24px; border-radius: 16px; }
-  .visual-copy { font-size: 9px; }
   .call-stage { gap: 8px; }
   .participant { min-height: 218px; border-radius: 16px; }
   .participant-tag { top: 12px; left: 12px; }
@@ -168,10 +166,6 @@ audio { display: none; }
   .controls > button { min-width: 0; width: 100%; padding: 0 12px; }
   .controls > button:only-child { grid-column: 1 / -1; }
   .page-foot { margin-top: 44px; }
-}
-
-@media (max-width: 350px) {
-  .visual-copy { align-items: flex-start; flex-direction: column; gap: 5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
