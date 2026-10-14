@@ -517,8 +517,8 @@ window.addEventListener("offline", () => logEvent("browser-offline"));
 $("copy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(location.href);
-    $("copy").textContent = "Link copied";
-    setTimeout(() => { $("copy").textContent = "Copy invite link"; }, 2000);
+    $("copy").querySelector("span").textContent = "Link copied";
+    setTimeout(() => { $("copy").querySelector("span").textContent = "Copy invite link"; }, 2000);
   } catch {
     setStatus("Copy failed", "Copy the link from your browser address bar.");
   }
@@ -527,7 +527,9 @@ muteButton.addEventListener("click", () => {
   const track = localStream?.getAudioTracks()[0];
   if (!track) return;
   track.enabled = !track.enabled;
-  muteButton.textContent = track.enabled ? "Mute" : "Unmute";
+  $("mute-label").textContent = track.enabled ? "Mute" : "Unmute";
+  muteButton.setAttribute("aria-label", track.enabled ? "Mute microphone" : "Unmute microphone");
+  muteButton.setAttribute("aria-pressed", String(!track.enabled));
 });
 hangupButton.addEventListener("click", () => hangUp());
 newCallButton.addEventListener("click", () => { history.replaceState(null, "", "/"); location.reload(); });
