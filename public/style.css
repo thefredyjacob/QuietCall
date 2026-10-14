@@ -51,21 +51,16 @@ button:active:not(:disabled) { transform: translateY(1px) scale(.99); }
 .skip-link { position: fixed; top: 12px; left: 12px; z-index: 2; transform: translateY(-160%); padding: 10px 14px; border-radius: 8px; background: var(--accent-bright); color: #18211e; }
 .skip-link:focus { transform: translateY(0); }
 
-.topbar, .brand, .page-foot, .participant-name, .connection-chip, .invite, .invite-copy, .controls {
+.participant-name, .connection-chip, .invite, .invite-copy, .controls {
   display: flex;
   align-items: center;
 }
 
-.topbar { justify-content: space-between; margin-bottom: clamp(36px, 7vh, 76px); }
-.brand { gap: 10px; color: var(--text); text-decoration: none; font-size: 15px; font-weight: 700; letter-spacing: .08em; }
-.brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #476052; border-radius: 11px; color: var(--accent-bright); background: #213029; }
-.brand-mark svg { width: 18px; height: 18px; }
-.top-note, .eyebrow, .participant-tag, .invite-label, .page-foot {
+.eyebrow, .participant-tag, .invite-label {
   font-size: 11px;
   font-weight: 650;
   letter-spacing: .12em;
 }
-.top-note { color: var(--muted); letter-spacing: .02em; }
 
 .home-panel { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: center; gap: clamp(36px, 8vw, 88px); }
 .home-copy { max-width: 430px; padding: 6px 0 20px; }
@@ -132,15 +127,12 @@ h1 { margin: 0; font-size: clamp(46px, 6.8vw, 72px); font-weight: 620; line-heig
 .diagnostic-actions button { min-height: 42px; padding: 0 13px; font-size: 13px; }
 #diagnostic-report { max-height: 260px; overflow: auto; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #101714; color: #d5e0d8; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.5 ui-monospace, monospace; }
 
-.page-foot { justify-content: space-between; margin-top: clamp(42px, 9vh, 88px); padding: 17px 2px 0; border-top: 1px solid #ffffff12; color: #839188; font-size: 9px; }
-.page-foot span:last-child { font-size: 12px; font-weight: 400; letter-spacing: 0; }
 audio { display: none; }
 [hidden] { display: none !important; }
 
 @media (max-width: 720px) {
   body { align-items: start; padding: 24px 20px; }
   .app-shell { margin: auto; }
-  .topbar { margin-bottom: 44px; }
   .home-panel { grid-template-columns: 1fr; gap: 34px; }
   .home-copy { max-width: 520px; padding: 0; }
   h1 { font-size: clamp(52px, 12vw, 76px); }
@@ -152,8 +144,6 @@ audio { display: none; }
 
 @media (max-width: 440px) {
   body { padding: 20px 16px; }
-  .topbar { margin-bottom: 36px; }
-  .top-note { font-size: 9px; }
   .home-visual { min-height: 190px; padding: 24px; border-radius: 16px; }
   .call-stage { gap: 8px; }
   .participant { min-height: 218px; border-radius: 16px; }
@@ -165,7 +155,6 @@ audio { display: none; }
   .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
   .controls > button { min-width: 0; width: 100%; padding: 0 12px; }
   .controls > button:only-child { grid-column: 1 / -1; }
-  .page-foot { margin-top: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
