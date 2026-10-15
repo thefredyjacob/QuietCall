@@ -4,6 +4,10 @@ const call = $("call");
 const status = $("status");
 const detail = $("detail");
 const invite = $("invite");
+const copyLinkButton = $("copy-link");
+const remoteParticipant = $("remote-participant");
+const localParticipantStatus = $("local-participant-status");
+const remoteParticipantStatus = $("remote-participant-status");
 const joinButton = $("join");
 const shareButton = $("share-link");
 const shareNote = $("share-note");
@@ -26,6 +30,7 @@ let token = roomId ? getToken(roomId) : null;
 let localStream = null;
 let joined = false;
 let callConnected = false;
+let remotePresent = false;
 let screenWakeLock = null;
 let hiddenAt = null;
 let audioSessionActive = false;
@@ -102,7 +107,7 @@ function showCall() {
   call.hidden = false;
   invite.hidden = !roomId;
   joinButton.hidden = !roomId || callConnected;
-  setJoinButtonPresentation(joined ? "Joining call…" : "Join call", true, joined);
+  setJoinButtonPresentation(joined ? status.textContent === "Waiting for other caller" ? "Waiting for other caller" : "Joining call…" : "Join call", true, joined);
   muteButton.hidden = !joined;
   pipButton.hidden = !joined || typeof window.documentPictureInPicture?.requestWindow !== "function";
   if (!joined) pipNote.hidden = true;
@@ -116,6 +121,17 @@ function showCall() {
   if (!joined || canSelectAudioOutput) audioOutputNote.hidden = true;
   hangupButton.hidden = !roomId || !joined;
   newCallButton.hidden = Boolean(roomId);
+}
+
+function updateParticipantStatuses() {
+  localParticipantStatus.textContent = callConnected ? "Connected" : joined ? status.textContent : status.textContent === "Ready to join" ? "Not joined" : status.textContent;
+  remoteParticipantStatus.textContent = callConnected ? "Connected" : remotePresent ? "Joining call…" : joined ? "Waiting for caller" : "Not connected";
+}
+
+function setRemotePresent(present) {
+  remotePresent = present;
+  remoteParticipant.classList.toggle("remote-present", present);
+  updateParticipantStatuses();
 }
 
 function setJoinButtonPresentation(label, prominent, busy) {
@@ -373,6 +389,10 @@ function setStatus(text, message = "") {
         ? "warning"
         : "waiting";
   detail.textContent = message;
+  if (joined && !callConnected && !joinButton.hidden) {
+    setJoinButtonPresentation(text === "Waiting for other caller" ? text : "Joining call…", true, true);
+  }
+  updateParticipantStatuses();
   syncPictureInPicture();
 }
 
@@ -487,6 +507,7 @@ async function pollLoop() {
         localStream = null;
         joined = false;
         callConnected = false;
+        setRemotePresent(false);
         releaseScreenWakeLock();
         showCall();
         joinButton.disabled = false;
@@ -509,10 +530,17 @@ async function pollLoop() {
 }
 
 async function createCall() {
+  const restarting = Boolean(roomId);
+  const previousToken = token;
   $("create").disabled = true;
+  if (restarting) {
+    newCallButton.disabled = true;
+    invite.hidden = true;
+  }
   $("home-error").textContent = "";
   setStatus("Creating call…");
   showCall();
+  if (restarting) invite.hidden = true;
   try {
     token = crypto.randomUUID();
     const result = await post("create", { token });
@@ -525,9 +553,17 @@ async function createCall() {
     await joinCall();
   } catch (error) {
     logEvent("room-create-failed", { message: error.message, status: error.status });
+    if (restarting) token = previousToken;
     $("create").disabled = false;
-    showHome();
-    $("home-error").textContent = `Could not create call: ${error.message}`;
+    if (restarting) {
+      newCallButton.disabled = false;
+      showCall();
+      newCallButton.hidden = false;
+      setStatus("Could not create call", error.message);
+    } else {
+      showHome();
+      $("home-error").textContent = `Could not create call: ${error.message}`;
+    }
   }
 }
 
@@ -549,13 +585,14 @@ async function joinCall() {
     await post("join", { roomId, token });
     logEvent("room-joined");
     joined = true;
+    setRemotePresent(false);
     activateCallPictureInPicture();
     await requestScreenWakeLock();
     await refreshAudioDevices();
     await configureIceServers();
     send({ type: "ready" });
-    showCall();
     setStatus("Waiting for other caller", "Microphone is on.");
+    showCall();
     startStats();
     pollLoop();
   } catch (error) {
@@ -566,6 +603,7 @@ async function joinCall() {
     localStream = null;
     joined = false;
     callConnected = false;
+    setRemotePresent(false);
     joinButton.disabled = false;
     showCall();
     setStatus("Could not join call", error.message || "Microphone access failed.");
@@ -627,6 +665,7 @@ function getPeerConnection(peerId) {
     logEvent("peer-connection-state", { state: pc.connectionState });
     if (pc.connectionState === "connected") {
       callConnected = true;
+      setRemotePresent(true);
       showCall();
       updateConnectionType(pc);
     }
@@ -748,8 +787,14 @@ function startStats() {
 
 function handleMessage(message) {
   if (message.type === "ready") {
+    if (message.peers.length) {
+      setRemotePresent(true);
+      setStatus("Connecting");
+    }
     for (const peerId of message.peers) beginPeer(peerId);
   } else if (message.type === "peer-ready") {
+    setRemotePresent(true);
+    setStatus("Connecting");
     beginPeer(message.peerId);
   } else if (message.type === "signal") {
     handleSignal(message.from, message.signal);
@@ -758,6 +803,7 @@ function handleMessage(message) {
     peerConnections.delete(message.peerId);
     pendingCandidates.delete(message.peerId);
     callConnected = false;
+    setRemotePresent(false);
     remoteAudio.srcObject = null;
     showCall();
     setStatus("Waiting for other caller", "They can rejoin from the same link.");
@@ -775,6 +821,7 @@ function hangUp() {
   remoteAudio.srcObject = null;
   joined = false;
   callConnected = false;
+  setRemotePresent(false);
   closeCallPictureInPicture();
   releaseScreenWakeLock();
   clearSystemCallControls();
@@ -784,6 +831,7 @@ function hangUp() {
   hangupButton.hidden = true;
   muteButton.hidden = true;
   newCallButton.hidden = false;
+  newCallButton.disabled = false;
   setStatus("Call ended");
 }
 
@@ -835,6 +883,7 @@ shareButton.addEventListener("click", async () => {
     await copyInviteLink();
   }
 });
+copyLinkButton.addEventListener("click", copyInviteLink);
 muteButton.addEventListener("click", toggleMute);
 pipButton.addEventListener("click", () => openCallPictureInPicture("manual"));
 audioOutputButton.addEventListener("click", async () => {
@@ -863,7 +912,7 @@ navigator.mediaDevices?.addEventListener?.("devicechange", () => {
   if (joined) refreshAudioDevices();
 });
 hangupButton.addEventListener("click", () => hangUp());
-newCallButton.addEventListener("click", () => { history.replaceState(null, "", "/"); location.reload(); });
+newCallButton.addEventListener("click", createCall);
 
 if (roomId) {
   showCall();

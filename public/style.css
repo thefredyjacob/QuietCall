@@ -99,6 +99,8 @@ h1 { margin: 0; color: var(--text); font-size: clamp(42px, 6vw, 68px); font-weig
 .call-stage { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .participant { position: relative; display: flex; min-height: clamp(250px, 34vh, 380px); flex-direction: column; align-items: center; justify-content: center; overflow: hidden; border: 1px solid #333; border-radius: 10px; background: var(--tile); }
 .participant-guest { background: #242424; }
+.participant-guest.remote-present { border-color: #4f8d68; background: #24372d; }
+.participant-guest.remote-present .guest-orb { border-color: #6eaf83; color: #bce5c6; background: #315640; }
 .participant-orb { display: grid; width: clamp(88px, 11vw, 120px); aspect-ratio: 1; place-items: center; border: 1px solid #58685e; border-radius: 50%; color: var(--accent); background: #303a33; }
 .participant-orb svg { width: 32px; height: 32px; }
 .guest-orb { border-color: #555; color: #e0e0e0; background: #343434; }
@@ -111,6 +113,7 @@ h1 { margin: 0; color: var(--text); font-size: clamp(42px, 6vw, 68px); font-weig
 .invite-label { color: var(--text); font-size: 14px; font-weight: 600; }
 .invite-help { color: var(--muted); font-size: 13px; }
 .share-note { margin: 4px 0 0; color: var(--accent); font-size: 12px; }
+.invite-actions { display: flex; gap: 8px; }
 .secondary { color: var(--text); background: #303030; border-color: #484848; }
 .secondary:hover { background: #393939; border-color: #666; }
 .copy-link { justify-content: center; gap: 9px; min-height: 48px; }
@@ -179,6 +182,7 @@ audio { display: none; }
   .participant-orb svg { width: 25px; height: 25px; }
   .participant-name { position: static; min-width: 0; padding: 0; border: 0; background: transparent; }
   .invite { align-items: stretch; flex-direction: column; gap: 10px; padding: 12px; }
+  .invite-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .copy-link { width: 100%; }
   .controls { gap: 4px; padding: 7px 3px; }
   .control-button { min-width: 82px; padding-inline: 5px; }
