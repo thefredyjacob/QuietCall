@@ -8,6 +8,10 @@ const joinButton = $("join");
 const muteButton = $("mute");
 const audioOutputButton = $("audio-output");
 const audioOutputNote = $("audio-output-note");
+const audioDevicePanel = $("audio-device-panel");
+const audioInputSelect = $("audio-input");
+const audioOutputSelect = $("audio-output-select");
+const chooseAudioOutputButton = $("choose-audio-output");
 const foregroundHint = $("foreground-hint");
 const backgroundInfo = $("background-info");
 const hangupButton = $("hangup");
@@ -58,7 +62,10 @@ function renderDiagnostics() {
     secureContext: isSecureContext,
     online: navigator.onLine,
     microphoneApiAvailable: Boolean(navigator.mediaDevices?.getUserMedia),
-    audioOutputPickerAvailable: typeof remoteAudio.setSinkId === "function" && typeof navigator.mediaDevices?.selectAudioOutput === "function",
+    audioOutputRoutingAvailable: typeof remoteAudio.setSinkId === "function",
+    audioOutputPickerAvailable: typeof navigator.mediaDevices?.selectAudioOutput === "function",
+    audioInputDeviceCount: audioInputSelect.options.length - 1,
+    audioOutputDeviceCount: audioOutputSelect.options.length - 1,
     audioSessionApiAvailable: Boolean(navigator.audioSession),
     screenWakeLockAvailable: Boolean(navigator.wakeLock?.request),
     mediaSessionAvailable: Boolean(navigator.mediaSession?.setActionHandler),
@@ -91,6 +98,11 @@ function showCall() {
   muteButton.hidden = !joined;
   const canSelectAudioOutput = typeof remoteAudio.setSinkId === "function" && typeof navigator.mediaDevices?.selectAudioOutput === "function";
   audioOutputButton.hidden = !joined;
+  if (!joined) {
+    audioDevicePanel.hidden = true;
+    audioOutputButton.setAttribute("aria-expanded", "false");
+  }
+  chooseAudioOutputButton.hidden = !joined || typeof remoteAudio.setSinkId !== "function" || typeof navigator.mediaDevices?.selectAudioOutput !== "function";
   if (!joined || canSelectAudioOutput) audioOutputNote.hidden = true;
   hangupButton.hidden = !roomId || !joined;
   newCallButton.hidden = Boolean(roomId);
@@ -177,6 +189,88 @@ function showAudioOutputHelp() {
       ? "Choose Speaker or a connected headset from Control Center. This browser does not expose an in-call output picker."
       : "Choose the output device in your computer’s sound settings. This browser does not expose an in-call output picker.";
   audioOutputNote.hidden = false;
+}
+
+function setDeviceOptions(select, devices, defaultLabel, prefix, preferredValue = select.value) {
+  select.replaceChildren(new Option(defaultLabel, ""));
+  const available = devices.filter((device) => device.deviceId && device.deviceId !== "default");
+  available.forEach((device, index) => select.add(new Option(device.label || `${prefix} ${index + 1}`, device.deviceId)));
+  if (available.some((device) => device.deviceId === preferredValue)) select.value = preferredValue;
+}
+
+async function refreshAudioDevices(preferredOutputId) {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((device) => device.kind === "audioinput");
+    const outputs = devices.filter((device) => device.kind === "audiooutput");
+    const selectedInput = localStream?.getAudioTracks()[0]?.getSettings().deviceId || audioInputSelect.value;
+    setDeviceOptions(audioInputSelect, inputs, "System default microphone", "Microphone", selectedInput);
+    setDeviceOptions(audioOutputSelect, outputs, "System default output", "Speaker", preferredOutputId ?? remoteAudio.sinkId ?? audioOutputSelect.value);
+    audioOutputSelect.disabled = typeof remoteAudio.setSinkId !== "function";
+    audioOutputNote.hidden = false;
+    audioOutputNote.textContent = audioOutputSelect.disabled
+      ? "This browser cannot select an output here. Use your device’s audio controls."
+      : outputs.length > 1
+        ? "Choose an available output. Use More output devices to grant access to another speaker or headset."
+        : "Choose More output devices to select a speaker or headset.";
+    logEvent("audio-devices-listed", { microphones: inputs.length, outputs: outputs.length });
+  } catch (error) {
+    logEvent("audio-devices-list-failed", { name: error.name, message: error.message });
+    audioOutputNote.hidden = false;
+    audioOutputNote.textContent = "Could not list audio devices. Check browser permissions and try again.";
+  }
+}
+
+async function switchMicrophone(deviceId) {
+  const previousStream = localStream;
+  const previousTrack = previousStream?.getAudioTracks()[0];
+  const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+
+  let nextStream;
+  try {
+    nextStream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+    const nextTrack = nextStream.getAudioTracks()[0];
+    nextTrack.enabled = previousTrack?.enabled ?? true;
+    const senders = [...peerConnections.values()].flatMap((pc) => pc.getSenders()).filter((sender) => sender.track === previousTrack);
+    const replaced = [];
+    try {
+      for (const sender of senders) {
+        await sender.replaceTrack(nextTrack);
+        replaced.push(sender);
+      }
+    } catch (error) {
+      await Promise.allSettled(replaced.map((sender) => sender.replaceTrack(previousTrack)));
+      throw error;
+    }
+    localStream = nextStream;
+    previousStream?.getTracks().forEach((track) => track.stop());
+    const settings = nextTrack.getSettings();
+    logEvent("microphone-changed", { deviceSelected: Boolean(deviceId), settings: Object.fromEntries(["sampleRate", "channelCount", "echoCancellation", "noiseSuppression", "autoGainControl"].filter((key) => settings[key] !== undefined).map((key) => [key, settings[key]])) });
+    audioOutputNote.hidden = false;
+    audioOutputNote.textContent = "Microphone changed without ending the call.";
+  } catch (error) {
+    nextStream?.getTracks().forEach((track) => track.stop());
+    audioInputSelect.value = previousTrack?.getSettings().deviceId || "";
+    logEvent("microphone-change-failed", { name: error.name, message: error.message });
+    audioOutputNote.hidden = false;
+    audioOutputNote.textContent = `Could not change microphone: ${error.message || "check microphone permissions."}`;
+  }
+}
+
+async function switchSpeaker(deviceId) {
+  try {
+    await remoteAudio.setSinkId(deviceId);
+    audioOutputNote.hidden = false;
+    audioOutputNote.textContent = deviceId ? `Playing through ${audioOutputSelect.selectedOptions[0]?.textContent || "selected output"}.` : "Playing through the system default output.";
+    logEvent("audio-output-changed", { deviceSelected: Boolean(deviceId) });
+  } catch (error) {
+    audioOutputNote.hidden = false;
+    audioOutputNote.textContent = `Could not change output: ${error.message || "use your device’s audio controls."}`;
+    logEvent("audio-output-change-failed", { name: error.name, message: error.message });
+    audioOutputSelect.value = remoteAudio.sinkId || "";
+  }
 }
 
 function setStatus(text, message = "") {
@@ -371,6 +465,7 @@ async function joinCall() {
     logEvent("room-joined");
     joined = true;
     await requestScreenWakeLock();
+    await refreshAudioDevices();
     updateBackgroundInfo();
     await configureIceServers();
     send({ type: "ready" });
@@ -629,17 +724,19 @@ muteButton.addEventListener("click", () => {
   muteButton.setAttribute("aria-pressed", String(!track.enabled));
 });
 audioOutputButton.addEventListener("click", async () => {
-  if (typeof remoteAudio.setSinkId !== "function" || typeof navigator.mediaDevices?.selectAudioOutput !== "function") {
-    showAudioOutputHelp();
-    logEvent("audio-output-picker-unavailable", { device: deviceFamily() });
-    return;
-  }
+  audioDevicePanel.hidden = !audioDevicePanel.hidden;
+  audioOutputButton.setAttribute("aria-expanded", String(!audioDevicePanel.hidden));
+  if (audioDevicePanel.hidden) return;
+  await refreshAudioDevices();
+  if (typeof remoteAudio.setSinkId !== "function") showAudioOutputHelp();
+});
+audioInputSelect.addEventListener("change", () => switchMicrophone(audioInputSelect.value));
+audioOutputSelect.addEventListener("change", () => switchSpeaker(audioOutputSelect.value));
+chooseAudioOutputButton.addEventListener("click", async () => {
   try {
     const device = await navigator.mediaDevices.selectAudioOutput();
-    await remoteAudio.setSinkId(device.deviceId);
-    audioOutputNote.textContent = `Playing through ${device.label || "selected device"}.`;
-    audioOutputNote.hidden = false;
-    logEvent("audio-output-changed");
+    await refreshAudioDevices(device.deviceId);
+    await switchSpeaker(device.deviceId);
   } catch (error) {
     logEvent("audio-output-change-failed", { name: error.name, message: error.message });
     audioOutputNote.hidden = false;
@@ -647,6 +744,9 @@ audioOutputButton.addEventListener("click", async () => {
       ? "Audio output was not changed. Try again or use your device’s audio controls."
       : `Could not switch output: ${error.message || "Use your device’s audio controls."}`;
   }
+});
+navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+  if (joined) refreshAudioDevices();
 });
 hangupButton.addEventListener("click", () => hangUp());
 newCallButton.addEventListener("click", () => { history.replaceState(null, "", "/"); location.reload(); });

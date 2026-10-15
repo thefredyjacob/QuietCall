@@ -118,6 +118,12 @@ h1 { margin: 0; color: var(--text); font-size: clamp(42px, 6vw, 68px); font-weig
 .copy-link { justify-content: center; gap: 9px; min-height: 48px; }
 
 .controls { justify-content: center; gap: 10px; margin-top: 10px; padding: 10px; border-radius: 10px; background: var(--surface); }
+.audio-device-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.audio-device-panel label { display: grid; min-width: 0; gap: 6px; color: var(--muted); font-size: 13px; }
+.audio-device-panel select { width: 100%; min-width: 0; min-height: 44px; padding: 0 10px; border: 1px solid #484848; border-radius: 7px; color: var(--text); background: #222; font: inherit; }
+.audio-device-panel select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.audio-device-panel #choose-audio-output { justify-self: start; min-height: 40px; padding: 0 12px; }
+.audio-device-panel .audio-output-note { grid-column: 1 / -1; }
 .audio-output-note { margin: 2px 0 0; color: var(--muted); font-size: 13px; text-align: center; }
 .control-button { display: flex; min-width: 92px; min-height: 94px; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 5px 10px; border-radius: 9px; color: var(--text); background: transparent; }
 .control-button:hover { background: #292929; }
@@ -165,6 +171,7 @@ audio { display: none; }
   .copy-link { width: 100%; }
   .controls { gap: 4px; padding: 7px 3px; }
   .control-button { min-width: 82px; padding-inline: 5px; }
+  .audio-device-panel { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 380px) {
