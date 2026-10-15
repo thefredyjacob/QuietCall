@@ -148,6 +148,15 @@ h1 { margin: 0; color: var(--text); font-size: clamp(42px, 6vw, 68px); font-weig
 audio { display: none; }
 [hidden] { display: none !important; }
 
+.pip-document { display: block; min-width: 0; min-height: 0; padding: 12px; background: var(--page); }
+.pip-call { display: grid; height: 100%; grid-template-rows: auto 1fr auto; gap: 8px; }
+.pip-call-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pip-call-heading strong { color: var(--text); font-size: 14px; }
+.pip-call-heading span, #pip-detail { min-width: 0; margin: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pip-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pip-controls button { min-height: 42px; padding-inline: 8px; color: var(--text); background: var(--tile); }
+.pip-controls #pip-hangup { color: white; background: var(--danger); }
+
 @media (max-width: 720px) {
   body { align-items: start; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
   .topbar { margin-bottom: 30px; }

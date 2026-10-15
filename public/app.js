@@ -6,6 +6,8 @@ const detail = $("detail");
 const invite = $("invite");
 const joinButton = $("join");
 const muteButton = $("mute");
+const pipButton = $("pip-open");
+const pipNote = $("pip-note");
 const audioOutputButton = $("audio-output");
 const audioOutputNote = $("audio-output-note");
 const audioDevicePanel = $("audio-device-panel");
@@ -27,6 +29,8 @@ let screenWakeLock = null;
 let hiddenAt = null;
 let audioSessionActive = false;
 let mediaStopControlActive = false;
+let pipWindow = null;
+let pipOpening = false;
 let statsTimer = null;
 let pollLoopRunning = false;
 let iceServers = [
@@ -69,6 +73,8 @@ function renderDiagnostics() {
     audioSessionApiAvailable: Boolean(navigator.audioSession),
     screenWakeLockAvailable: Boolean(navigator.wakeLock?.request),
     mediaSessionAvailable: Boolean(navigator.mediaSession?.setActionHandler),
+    documentPictureInPictureAvailable: typeof window.documentPictureInPicture?.requestWindow === "function",
+    pictureInPictureOpen: Boolean(pipWindow && !pipWindow.closed),
     events: diagnosticEvents,
     peers: [...peerDiagnostics.values()],
   };
@@ -96,6 +102,8 @@ function showCall() {
   invite.hidden = !roomId;
   joinButton.hidden = joined || !roomId;
   muteButton.hidden = !joined;
+  pipButton.hidden = !joined || typeof window.documentPictureInPicture?.requestWindow !== "function";
+  if (!joined) pipNote.hidden = true;
   const canSelectAudioOutput = typeof remoteAudio.setSinkId === "function" && typeof navigator.mediaDevices?.selectAudioOutput === "function";
   audioOutputButton.hidden = !joined;
   if (!joined) {
@@ -166,9 +174,109 @@ function activateSystemCallControls() {
   }
 }
 
-function clearSystemCallControls() {
+function activateCallPictureInPicture() {
+  const session = navigator.mediaSession;
+  if (!session?.setActionHandler || typeof window.documentPictureInPicture?.requestWindow !== "function") return;
   try {
-    navigator.mediaSession?.setActionHandler("stop", null);
+    session.setActionHandler("enterpictureinpicture", () => { void openCallPictureInPicture("automatic"); });
+    logEvent("call-pip-handler", { active: true });
+  } catch (error) {
+    logEvent("call-pip-handler-unavailable", { name: error.name, message: error.message });
+  }
+}
+
+function syncPictureInPicture() {
+  if (!pipWindow || pipWindow.closed) return;
+  const pipStatus = pipWindow.document.getElementById("pip-status");
+  const pipDetail = pipWindow.document.getElementById("pip-detail");
+  const pipMute = pipWindow.document.getElementById("pip-mute");
+  const track = localStream?.getAudioTracks()[0];
+  if (pipStatus) pipStatus.textContent = status.textContent;
+  if (pipDetail) pipDetail.textContent = detail.textContent;
+  if (pipMute && track) {
+    pipMute.textContent = track.enabled ? "Mute" : "Unmute";
+    pipMute.setAttribute("aria-pressed", String(!track.enabled));
+  }
+}
+
+async function openCallPictureInPicture(source = "manual") {
+  const api = window.documentPictureInPicture;
+  if (!joined || typeof api?.requestWindow !== "function") return;
+  if (pipWindow && !pipWindow.closed) {
+    pipWindow.focus();
+    return;
+  }
+  if (pipOpening) return;
+
+  let nextWindow;
+  pipOpening = true;
+  try {
+    nextWindow = await api.requestWindow({ width: 340, height: 190 });
+    if (!joined) {
+      nextWindow.close();
+      return;
+    }
+    pipWindow = nextWindow;
+    const doc = nextWindow.document;
+    doc.title = "QuietCall";
+    doc.body.className = "pip-document";
+    const stylesheet = doc.createElement("link");
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = new URL("/style.css", location.origin).href;
+    doc.head.append(stylesheet);
+    doc.body.innerHTML = `<main class="pip-call"><div class="pip-call-heading"><strong>QuietCall</strong><span id="pip-status" aria-live="polite"></span></div><p id="pip-detail"></p><div class="pip-controls"><button id="pip-mute" type="button" aria-pressed="false">Mute</button><button id="pip-hangup" type="button">Hang up</button></div></main>`;
+    doc.getElementById("pip-mute").addEventListener("click", toggleMute);
+    doc.getElementById("pip-hangup").addEventListener("click", hangUp);
+    nextWindow.addEventListener("pagehide", () => {
+      if (pipWindow === nextWindow) pipWindow = null;
+      logEvent("call-pip-closed");
+      renderDiagnostics();
+    }, { once: true });
+    pipNote.hidden = true;
+    logEvent("call-pip-opened", { source });
+    syncPictureInPicture();
+    renderDiagnostics();
+  } catch (error) {
+    if (nextWindow && !nextWindow.closed) nextWindow.close();
+    pipWindow = null;
+    logEvent("call-pip-open-failed", { source, name: error.name, message: error.message });
+    if (source === "manual") {
+      pipNote.textContent = "Picture-in-picture was blocked. Check this site’s browser permission.";
+      pipNote.hidden = false;
+    }
+    renderDiagnostics();
+  } finally {
+    pipOpening = false;
+  }
+}
+
+function closeCallPictureInPicture() {
+  const current = pipWindow;
+  pipWindow = null;
+  if (current && !current.closed) current.close();
+  renderDiagnostics();
+}
+
+function syncMuteControls() {
+  const track = localStream?.getAudioTracks()[0];
+  if (!track) return;
+  $("mute-label").textContent = track.enabled ? "Mute" : "Unmute";
+  muteButton.setAttribute("aria-label", track.enabled ? "Mute microphone" : "Unmute microphone");
+  muteButton.setAttribute("aria-pressed", String(!track.enabled));
+  syncPictureInPicture();
+}
+
+function toggleMute() {
+  const track = localStream?.getAudioTracks()[0];
+  if (!track) return;
+  track.enabled = !track.enabled;
+  syncMuteControls();
+}
+
+function clearSystemCallControls() {
+  try { navigator.mediaSession?.setActionHandler("stop", null); } catch {}
+  try { navigator.mediaSession?.setActionHandler("enterpictureinpicture", null); } catch {}
+  try {
     if (navigator.mediaSession) {
       navigator.mediaSession.playbackState = "none";
       navigator.mediaSession.metadata = null;
@@ -284,6 +392,7 @@ function setStatus(text, message = "") {
         ? "warning"
         : "waiting";
   detail.textContent = message;
+  syncPictureInPicture();
 }
 
 async function post(path, body) {
@@ -364,6 +473,7 @@ document.addEventListener("visibilitychange", () => {
   } else {
     logEvent("page-visible", { joined, hiddenForMs: hiddenAt === null ? 0 : Date.now() - hiddenAt });
     hiddenAt = null;
+    closeCallPictureInPicture();
     if (joined) requestScreenWakeLock();
     updateBackgroundInfo();
   }
@@ -464,6 +574,7 @@ async function joinCall() {
     await post("join", { roomId, token });
     logEvent("room-joined");
     joined = true;
+    activateCallPictureInPicture();
     await requestScreenWakeLock();
     await refreshAudioDevices();
     updateBackgroundInfo();
@@ -681,6 +792,7 @@ function hangUp() {
   localStream = null;
   remoteAudio.srcObject = null;
   joined = false;
+  closeCallPictureInPicture();
   releaseScreenWakeLock();
   clearSystemCallControls();
   showCall();
@@ -715,14 +827,8 @@ $("copy").addEventListener("click", async () => {
     setStatus("Copy failed", "Copy the link from your browser address bar.");
   }
 });
-muteButton.addEventListener("click", () => {
-  const track = localStream?.getAudioTracks()[0];
-  if (!track) return;
-  track.enabled = !track.enabled;
-  $("mute-label").textContent = track.enabled ? "Mute" : "Unmute";
-  muteButton.setAttribute("aria-label", track.enabled ? "Mute microphone" : "Unmute microphone");
-  muteButton.setAttribute("aria-pressed", String(!track.enabled));
-});
+muteButton.addEventListener("click", toggleMute);
+pipButton.addEventListener("click", () => openCallPictureInPicture("manual"));
 audioOutputButton.addEventListener("click", async () => {
   audioDevicePanel.hidden = !audioDevicePanel.hidden;
   audioOutputButton.setAttribute("aria-expanded", String(!audioDevicePanel.hidden));
