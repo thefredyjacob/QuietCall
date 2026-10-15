@@ -8,7 +8,8 @@ const root = join(fileURLToPath(new URL(".", import.meta.url)), "public");
 const port = Number(process.env.PORT || 3000);
 const rooms = new Map();
 const inviteTtl = 60 * 60 * 1000;
-const inactiveTtl = 60 * 1000;
+// shortcut: Keep a departed/backgrounded peer briefly so mobile clients can resume.
+const inactiveTtl = 10 * 60 * 1000;
 let cachedTurnServers = [];
 let turnCacheExpires = 0;
 const mimeTypes = {

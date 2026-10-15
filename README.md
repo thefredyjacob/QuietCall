@@ -18,7 +18,7 @@ Push this repository to GitHub, then import it as a Hostinger Node.js Web App. S
 ## Calls
 
 - Rooms allow two participants and use memory only.
-- Unused rooms expire after one hour. Participants time out after 60 seconds without signaling polls; a room with one remaining participant expires after one hour.
+- Unused rooms expire after one hour. Participants time out after 10 minutes without signaling polls, giving suspended mobile tabs time to resume; a room with one remaining participant expires after one hour.
 - HTTP polling carries signaling only. WebRTC carries audio directly when possible.
 - Audio uses mono Opus, browser audio processing, and a 24 kbps sender cap. Browser and network support affect the actual bitrate and quality.
 - Google and Cloudflare STUN plus Metered Open Relay TURN fallback. Direct media remains peer-to-peer when possible; TURN relays only calls that need it.
