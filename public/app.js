@@ -5,6 +5,8 @@ const status = $("status");
 const detail = $("detail");
 const invite = $("invite");
 const joinButton = $("join");
+const shareButton = $("share-link");
+const shareNote = $("share-note");
 const muteButton = $("mute");
 const pipButton = $("pip-open");
 const pipNote = $("pip-note");
@@ -14,8 +16,6 @@ const audioDevicePanel = $("audio-device-panel");
 const audioInputSelect = $("audio-input");
 const audioOutputSelect = $("audio-output-select");
 const chooseAudioOutputButton = $("choose-audio-output");
-const foregroundHint = $("foreground-hint");
-const backgroundInfo = $("background-info");
 const hangupButton = $("hangup");
 const newCallButton = $("new-call");
 const remoteAudio = $("remote-audio");
@@ -25,12 +25,13 @@ let roomId = location.pathname.match(/^\/call\/([a-zA-Z0-9_-]+)\/?$/)?.[1] || nu
 let token = roomId ? getToken(roomId) : null;
 let localStream = null;
 let joined = false;
+let callConnected = false;
 let screenWakeLock = null;
 let hiddenAt = null;
 let audioSessionActive = false;
-let mediaStopControlActive = false;
 let pipWindow = null;
 let pipOpening = false;
+let shareNoteTimer = null;
 let statsTimer = null;
 let pollLoopRunning = false;
 let iceServers = [
@@ -100,7 +101,8 @@ function showCall() {
   home.hidden = true;
   call.hidden = false;
   invite.hidden = !roomId;
-  joinButton.hidden = joined || !roomId;
+  joinButton.hidden = !roomId || callConnected;
+  setJoinButtonPresentation(joined ? "Joining call…" : "Join call", true, joined);
   muteButton.hidden = !joined;
   pipButton.hidden = !joined || typeof window.documentPictureInPicture?.requestWindow !== "function";
   if (!joined) pipNote.hidden = true;
@@ -116,35 +118,17 @@ function showCall() {
   newCallButton.hidden = Boolean(roomId);
 }
 
+function setJoinButtonPresentation(label, prominent, busy) {
+  joinButton.querySelector(".control-label").textContent = label;
+  joinButton.classList.toggle("join-attention", prominent);
+  joinButton.setAttribute("aria-busy", String(busy));
+}
+
 function deviceFamily() {
   const agent = navigator.userAgent || "";
   if (/Android/i.test(agent)) return "Android";
   if (/iPhone|iPad|iPod/i.test(agent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return "iPhone or iPad";
   return "desktop";
-}
-
-function updateBackgroundInfo() {
-  if (!joined) {
-    foregroundHint.hidden = true;
-    return;
-  }
-  foregroundHint.hidden = false;
-  if (document.visibilityState === "hidden") {
-    backgroundInfo.textContent = "QuietCall is in the background. Your browser may interrupt the call; return here if audio stops.";
-    return;
-  }
-  const family = deviceFamily();
-  const guidance = family === "iPhone or iPad"
-    ? "On iPhone/iPad, keep QuietCall open. iOS may pause a browser call in the background; a website cannot start a native VoIP background service."
-    : family === "Android"
-      ? "On Android, the browser may keep the call active, but QuietCall cannot start a native microphone foreground service from a website. Switching apps can interrupt it."
-      : "On desktop, calls usually continue in another tab. Keep the browser open; this is browser-managed, not a native call service.";
-  const active = [
-    audioSessionActive ? "Call audio mode active." : "Browser-managed call audio.",
-    screenWakeLock && !screenWakeLock.released ? "Screen held awake while this tab is visible." : "",
-    mediaStopControlActive ? "System stop control registered." : "",
-  ].filter(Boolean).join(" ");
-  backgroundInfo.textContent = `${active} ${guidance}`;
 }
 
 function activateAudioSession() {
@@ -165,10 +149,8 @@ function activateSystemCallControls() {
   try {
     if (typeof MediaMetadata === "function") session.metadata = new MediaMetadata({ title: "QuietCall voice call", artist: "QuietCall" });
     session.setActionHandler("stop", hangUp);
-    mediaStopControlActive = true;
     session.playbackState = "playing";
     logEvent("system-call-control", { action: "stop", active: true });
-    updateBackgroundInfo();
   } catch (error) {
     logEvent("system-call-control-unavailable", { name: error.name, message: error.message });
   }
@@ -282,7 +264,6 @@ function clearSystemCallControls() {
       navigator.mediaSession.metadata = null;
     }
   } catch {}
-  mediaStopControlActive = false;
   if (audioSessionActive) {
     try { navigator.audioSession.type = "auto"; } catch {}
   }
@@ -437,24 +418,18 @@ async function checkService() {
 async function requestScreenWakeLock() {
   if (document.visibilityState !== "visible" || (screenWakeLock && !screenWakeLock.released)) return;
   if (!navigator.wakeLock?.request) {
-    updateBackgroundInfo();
     logEvent("screen-wake-lock-unavailable", { reason: "unsupported" });
     return;
   }
   try {
     const lock = await navigator.wakeLock.request("screen");
     screenWakeLock = lock;
-    updateBackgroundInfo();
     logEvent("screen-wake-lock", { state: "active" });
     lock.addEventListener("release", () => {
       if (screenWakeLock === lock) screenWakeLock = null;
       logEvent("screen-wake-lock", { state: "released" });
-      if (joined && document.visibilityState === "visible") {
-        updateBackgroundInfo();
-      }
     }, { once: true });
   } catch (error) {
-    updateBackgroundInfo();
     logEvent("screen-wake-lock-unavailable", { name: error.name, message: error.message });
   }
 }
@@ -462,20 +437,17 @@ async function requestScreenWakeLock() {
 function releaseScreenWakeLock() {
   screenWakeLock?.release().catch(() => {});
   screenWakeLock = null;
-  updateBackgroundInfo();
 }
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     hiddenAt = Date.now();
     logEvent("page-hidden", { joined });
-    updateBackgroundInfo();
   } else {
     logEvent("page-visible", { joined, hiddenForMs: hiddenAt === null ? 0 : Date.now() - hiddenAt });
     hiddenAt = null;
     closeCallPictureInPicture();
     if (joined) requestScreenWakeLock();
-    updateBackgroundInfo();
   }
 });
 
@@ -514,6 +486,7 @@ async function pollLoop() {
         localStream?.getTracks().forEach((track) => track.stop());
         localStream = null;
         joined = false;
+        callConnected = false;
         releaseScreenWakeLock();
         showCall();
         joinButton.disabled = false;
@@ -549,6 +522,7 @@ async function createCall() {
     showCall();
     setStatus("Waiting for invitee", "Invite link expires after one hour if unused.");
     logEvent("room-created");
+    await joinCall();
   } catch (error) {
     logEvent("room-create-failed", { message: error.message, status: error.status });
     $("create").disabled = false;
@@ -559,6 +533,7 @@ async function createCall() {
 
 async function joinCall() {
   joinButton.disabled = true;
+  setJoinButtonPresentation("Joining call…", true, true);
   await requestScreenWakeLock();
   activateAudioSession();
   logEvent("microphone-requested");
@@ -577,7 +552,6 @@ async function joinCall() {
     activateCallPictureInPicture();
     await requestScreenWakeLock();
     await refreshAudioDevices();
-    updateBackgroundInfo();
     await configureIceServers();
     send({ type: "ready" });
     showCall();
@@ -590,6 +564,8 @@ async function joinCall() {
     clearSystemCallControls();
     localStream?.getTracks().forEach((track) => track.stop());
     localStream = null;
+    joined = false;
+    callConnected = false;
     joinButton.disabled = false;
     showCall();
     setStatus("Could not join call", error.message || "Microphone access failed.");
@@ -649,7 +625,11 @@ function getPeerConnection(peerId) {
     const info = peerDiagnostics.get(pc);
     info.connectionState = pc.connectionState;
     logEvent("peer-connection-state", { state: pc.connectionState });
-    if (pc.connectionState === "connected") updateConnectionType(pc);
+    if (pc.connectionState === "connected") {
+      callConnected = true;
+      showCall();
+      updateConnectionType(pc);
+    }
     else if (pc.connectionState === "connecting") setStatus("Connecting");
     else if (pc.connectionState === "disconnected") setStatus("Reconnecting");
     else if (pc.connectionState === "failed") {
@@ -777,7 +757,9 @@ function handleMessage(message) {
     peerConnections.get(message.peerId)?.close();
     peerConnections.delete(message.peerId);
     pendingCandidates.delete(message.peerId);
+    callConnected = false;
     remoteAudio.srcObject = null;
+    showCall();
     setStatus("Waiting for other caller", "They can rejoin from the same link.");
   }
 }
@@ -792,6 +774,7 @@ function hangUp() {
   localStream = null;
   remoteAudio.srcObject = null;
   joined = false;
+  callConnected = false;
   closeCallPictureInPicture();
   releaseScreenWakeLock();
   clearSystemCallControls();
@@ -818,13 +801,38 @@ $("copy-diagnostics").addEventListener("click", async () => {
 });
 window.addEventListener("online", () => logEvent("browser-online"));
 window.addEventListener("offline", () => logEvent("browser-offline"));
-$("copy").addEventListener("click", async () => {
+function showShareNote(message) {
+  clearTimeout(shareNoteTimer);
+  shareNote.textContent = message;
+  shareNote.hidden = false;
+  shareNoteTimer = setTimeout(() => { shareNote.hidden = true; }, 5000);
+}
+
+async function copyInviteLink() {
   try {
     await navigator.clipboard.writeText(location.href);
-    $("copy").querySelector("span").textContent = "Link copied";
-    setTimeout(() => { $("copy").querySelector("span").textContent = "Copy invite link"; }, 2000);
-  } catch {
-    setStatus("Copy failed", "Copy the link from your browser address bar.");
+    showShareNote("Call link copied. Share via your favourite app.");
+    logEvent("invite-link-copied");
+  } catch (error) {
+    showShareNote("Could not copy link. Copy it from the address bar.");
+    logEvent("invite-link-copy-failed", { name: error.name, message: error.message });
+  }
+}
+
+shareButton.addEventListener("click", async () => {
+  if (!navigator.share) return copyInviteLink();
+  showShareNote("Share this call link with one person.");
+  try {
+    await navigator.share({ title: "QuietCall voice call", text: "Join my QuietCall call", url: location.href });
+    showShareNote("Call link shared.");
+    logEvent("native-share-opened");
+  } catch (error) {
+    if (error.name === "AbortError") {
+      showShareNote("Sharing cancelled.");
+      return;
+    }
+    logEvent("native-share-failed", { name: error.name, message: error.message });
+    await copyInviteLink();
   }
 });
 muteButton.addEventListener("click", toggleMute);

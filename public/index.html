@@ -50,8 +50,6 @@
           </div>
         </div>
         <p id="detail" class="detail call-detail"></p>
-        <p id="foreground-hint" class="foreground-hint" role="status" aria-live="polite" hidden><strong>Background call</strong><span id="background-info"></span></p>
-
         <section class="call-stage" aria-label="Call participants">
           <article class="participant participant-you">
             <div class="participant-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M3 10v4m4-7v10m5-14v18m5-13v8m4-6v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
@@ -64,15 +62,15 @@
         </section>
 
         <div id="invite" class="invite" hidden>
-          <div class="invite-copy"><span class="invite-label">CALL LINK</span><span class="invite-help">Share with one person</span></div>
-          <button id="copy" class="secondary copy-link">
+          <div class="invite-copy"><span class="invite-label">CALL LINK</span><span class="invite-help">Share with one person</span><p id="share-note" class="share-note" role="status" aria-live="polite" hidden></p></div>
+          <button id="share-link" class="secondary copy-link">
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7m2.7 4a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.7-1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            <span>Copy invite link</span>
+            <span>Share link</span>
           </button>
         </div>
 
         <div class="controls">
-          <button id="join" class="control-button control-join" hidden>
+          <button id="join" class="control-button control-join join-attention" aria-busy="false" hidden>
             <span class="control-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M7 3h3l2 5-2 1.5a14 14 0 0 0 4.5 4.5L16 12l5 2v3c0 1.1-.9 2-2 2C10.7 19 5 13.3 5 6c0-1.7.7-3 2-3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
             <span class="control-label">Join call</span>
           </button>
