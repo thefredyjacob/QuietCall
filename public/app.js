@@ -6,6 +6,8 @@ const detail = $("detail");
 const invite = $("invite");
 const joinButton = $("join");
 const muteButton = $("mute");
+const audioOutputButton = $("audio-output");
+const audioOutputNote = $("audio-output-note");
 const hangupButton = $("hangup");
 const newCallButton = $("new-call");
 const remoteAudio = $("remote-audio");
@@ -78,6 +80,9 @@ function showCall() {
   invite.hidden = !roomId;
   joinButton.hidden = joined || !roomId;
   muteButton.hidden = !joined;
+  const canSelectAudioOutput = typeof remoteAudio.setSinkId === "function" && typeof navigator.mediaDevices?.selectAudioOutput === "function";
+  audioOutputButton.hidden = !joined || !canSelectAudioOutput;
+  audioOutputNote.hidden = !joined || canSelectAudioOutput;
   hangupButton.hidden = !roomId || !joined;
   newCallButton.hidden = Boolean(roomId);
 }
@@ -530,6 +535,19 @@ muteButton.addEventListener("click", () => {
   $("mute-label").textContent = track.enabled ? "Mute" : "Unmute";
   muteButton.setAttribute("aria-label", track.enabled ? "Mute microphone" : "Unmute microphone");
   muteButton.setAttribute("aria-pressed", String(!track.enabled));
+});
+audioOutputButton.addEventListener("click", async () => {
+  try {
+    const device = await navigator.mediaDevices.selectAudioOutput();
+    await remoteAudio.setSinkId(device.deviceId);
+    audioOutputNote.textContent = `Playing through ${device.label || "selected device"}.`;
+    audioOutputNote.hidden = false;
+    logEvent("audio-output-changed");
+  } catch (error) {
+    logEvent("audio-output-change-failed", { name: error.name, message: error.message });
+    audioOutputNote.hidden = false;
+    audioOutputNote.textContent = `Could not switch output: ${error.message || "the browser blocked the change."}`;
+  }
 });
 hangupButton.addEventListener("click", () => hangUp());
 newCallButton.addEventListener("click", () => { history.replaceState(null, "", "/"); location.reload(); });
