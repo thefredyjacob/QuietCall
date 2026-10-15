@@ -8,6 +8,8 @@ const joinButton = $("join");
 const muteButton = $("mute");
 const audioOutputButton = $("audio-output");
 const audioOutputNote = $("audio-output-note");
+const foregroundHint = $("foreground-hint");
+const backgroundInfo = $("background-info");
 const hangupButton = $("hangup");
 const newCallButton = $("new-call");
 const remoteAudio = $("remote-audio");
@@ -19,6 +21,8 @@ let localStream = null;
 let joined = false;
 let screenWakeLock = null;
 let hiddenAt = null;
+let audioSessionActive = false;
+let mediaStopControlActive = false;
 let statsTimer = null;
 let pollLoopRunning = false;
 let iceServers = [
@@ -50,9 +54,14 @@ function renderDiagnostics() {
     app: "QuietCall",
     page: `${location.origin}${roomId ? "/call/[redacted]" : "/"}`,
     browser: navigator.userAgent,
+    device: deviceFamily(),
     secureContext: isSecureContext,
     online: navigator.onLine,
     microphoneApiAvailable: Boolean(navigator.mediaDevices?.getUserMedia),
+    audioOutputPickerAvailable: typeof remoteAudio.setSinkId === "function" && typeof navigator.mediaDevices?.selectAudioOutput === "function",
+    audioSessionApiAvailable: Boolean(navigator.audioSession),
+    screenWakeLockAvailable: Boolean(navigator.wakeLock?.request),
+    mediaSessionAvailable: Boolean(navigator.mediaSession?.setActionHandler),
     events: diagnosticEvents,
     peers: [...peerDiagnostics.values()],
   };
@@ -81,10 +90,93 @@ function showCall() {
   joinButton.hidden = joined || !roomId;
   muteButton.hidden = !joined;
   const canSelectAudioOutput = typeof remoteAudio.setSinkId === "function" && typeof navigator.mediaDevices?.selectAudioOutput === "function";
-  audioOutputButton.hidden = !joined || !canSelectAudioOutput;
-  audioOutputNote.hidden = !joined || canSelectAudioOutput;
+  audioOutputButton.hidden = !joined;
+  if (!joined || canSelectAudioOutput) audioOutputNote.hidden = true;
   hangupButton.hidden = !roomId || !joined;
   newCallButton.hidden = Boolean(roomId);
+}
+
+function deviceFamily() {
+  const agent = navigator.userAgent || "";
+  if (/Android/i.test(agent)) return "Android";
+  if (/iPhone|iPad|iPod/i.test(agent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return "iPhone or iPad";
+  return "desktop";
+}
+
+function updateBackgroundInfo() {
+  if (!joined) {
+    foregroundHint.hidden = true;
+    return;
+  }
+  foregroundHint.hidden = false;
+  if (document.visibilityState === "hidden") {
+    backgroundInfo.textContent = "QuietCall is in the background. Your browser may interrupt the call; return here if audio stops.";
+    return;
+  }
+  const family = deviceFamily();
+  const guidance = family === "iPhone or iPad"
+    ? "On iPhone/iPad, keep QuietCall open. iOS may pause a browser call in the background; a website cannot start a native VoIP background service."
+    : family === "Android"
+      ? "On Android, the browser may keep the call active, but QuietCall cannot start a native microphone foreground service from a website. Switching apps can interrupt it."
+      : "On desktop, calls usually continue in another tab. Keep the browser open; this is browser-managed, not a native call service.";
+  const active = [
+    audioSessionActive ? "Call audio mode active." : "Browser-managed call audio.",
+    screenWakeLock && !screenWakeLock.released ? "Screen held awake while this tab is visible." : "",
+    mediaStopControlActive ? "System stop control registered." : "",
+  ].filter(Boolean).join(" ");
+  backgroundInfo.textContent = `${active} ${guidance}`;
+}
+
+function activateAudioSession() {
+  if (!navigator.audioSession) return false;
+  try {
+    navigator.audioSession.type = "play-and-record";
+    audioSessionActive = navigator.audioSession.type === "play-and-record";
+    logEvent("audio-session", { type: navigator.audioSession.type, active: audioSessionActive });
+  } catch (error) {
+    logEvent("audio-session-unavailable", { name: error.name, message: error.message });
+  }
+  return audioSessionActive;
+}
+
+function activateSystemCallControls() {
+  const session = navigator.mediaSession;
+  if (!session?.setActionHandler) return;
+  try {
+    if (typeof MediaMetadata === "function") session.metadata = new MediaMetadata({ title: "QuietCall voice call", artist: "QuietCall" });
+    session.setActionHandler("stop", hangUp);
+    mediaStopControlActive = true;
+    session.playbackState = "playing";
+    logEvent("system-call-control", { action: "stop", active: true });
+    updateBackgroundInfo();
+  } catch (error) {
+    logEvent("system-call-control-unavailable", { name: error.name, message: error.message });
+  }
+}
+
+function clearSystemCallControls() {
+  try {
+    navigator.mediaSession?.setActionHandler("stop", null);
+    if (navigator.mediaSession) {
+      navigator.mediaSession.playbackState = "none";
+      navigator.mediaSession.metadata = null;
+    }
+  } catch {}
+  mediaStopControlActive = false;
+  if (audioSessionActive) {
+    try { navigator.audioSession.type = "auto"; } catch {}
+  }
+  audioSessionActive = false;
+}
+
+function showAudioOutputHelp() {
+  const family = deviceFamily();
+  audioOutputNote.textContent = family === "Android"
+    ? "Choose speaker, earpiece, or Bluetooth from Android’s media output or Bluetooth controls. This browser does not expose an in-call output picker."
+    : family === "iPhone or iPad"
+      ? "Choose Speaker or a connected headset from Control Center. This browser does not expose an in-call output picker."
+      : "Choose the output device in your computer’s sound settings. This browser does not expose an in-call output picker.";
+  audioOutputNote.hidden = false;
 }
 
 function setStatus(text, message = "") {
@@ -139,32 +231,27 @@ async function checkService() {
   }
 }
 
-async function requestScreenWakeLock(resumed = false) {
+async function requestScreenWakeLock() {
   if (document.visibilityState !== "visible" || (screenWakeLock && !screenWakeLock.released)) return;
   if (!navigator.wakeLock?.request) {
-    $("foreground-hint").textContent = "Keep QuietCall open and screen on for best call stability.";
-    $("foreground-hint").hidden = false;
+    updateBackgroundInfo();
     logEvent("screen-wake-lock-unavailable", { reason: "unsupported" });
     return;
   }
   try {
     const lock = await navigator.wakeLock.request("screen");
     screenWakeLock = lock;
-    $("foreground-hint").textContent = resumed
-      ? "Welcome back. Keep QuietCall open and check connection status."
-      : "Screen stays awake while QuietCall is open.";
-    $("foreground-hint").hidden = false;
+    updateBackgroundInfo();
     logEvent("screen-wake-lock", { state: "active" });
     lock.addEventListener("release", () => {
       if (screenWakeLock === lock) screenWakeLock = null;
       logEvent("screen-wake-lock", { state: "released" });
       if (joined && document.visibilityState === "visible") {
-        $("foreground-hint").textContent = "Keep QuietCall open and screen on for best call stability.";
+        updateBackgroundInfo();
       }
     }, { once: true });
   } catch (error) {
-    $("foreground-hint").textContent = "Keep QuietCall open and screen on for best call stability.";
-    $("foreground-hint").hidden = false;
+    updateBackgroundInfo();
     logEvent("screen-wake-lock-unavailable", { name: error.name, message: error.message });
   }
 }
@@ -172,18 +259,19 @@ async function requestScreenWakeLock(resumed = false) {
 function releaseScreenWakeLock() {
   screenWakeLock?.release().catch(() => {});
   screenWakeLock = null;
-  $("foreground-hint").hidden = true;
+  updateBackgroundInfo();
 }
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     hiddenAt = Date.now();
     logEvent("page-hidden", { joined });
+    updateBackgroundInfo();
   } else {
     logEvent("page-visible", { joined, hiddenForMs: hiddenAt === null ? 0 : Date.now() - hiddenAt });
-    const resumed = hiddenAt !== null;
     hiddenAt = null;
-    if (joined) requestScreenWakeLock(resumed);
+    if (joined) requestScreenWakeLock();
+    updateBackgroundInfo();
   }
 });
 
@@ -268,6 +356,7 @@ async function createCall() {
 async function joinCall() {
   joinButton.disabled = true;
   await requestScreenWakeLock();
+  activateAudioSession();
   logEvent("microphone-requested");
   setStatus("Allow microphone access", "Your browser will ask for microphone permission.");
   try {
@@ -282,6 +371,7 @@ async function joinCall() {
     logEvent("room-joined");
     joined = true;
     await requestScreenWakeLock();
+    updateBackgroundInfo();
     await configureIceServers();
     send({ type: "ready" });
     showCall();
@@ -291,6 +381,7 @@ async function joinCall() {
   } catch (error) {
     logEvent("join-failed", { name: error.name, message: error.message, status: error.status });
     releaseScreenWakeLock();
+    clearSystemCallControls();
     localStream?.getTracks().forEach((track) => track.stop());
     localStream = null;
     joinButton.disabled = false;
@@ -346,7 +437,7 @@ function getPeerConnection(peerId) {
   pc.ontrack = ({ streams }) => {
     remoteAudio.srcObject = streams[0];
     logEvent("remote-audio-track", { streamCount: streams.length });
-    remoteAudio.play().catch((error) => { logEvent("audio-playback-blocked", { message: error.message }); setStatus("Tap to hear", "Your browser blocked audio playback."); });
+    remoteAudio.play().then(activateSystemCallControls).catch((error) => { logEvent("audio-playback-blocked", { message: error.message }); setStatus("Tap to hear", "Your browser blocked audio playback."); });
   };
   pc.onconnectionstatechange = () => {
     const info = peerDiagnostics.get(pc);
@@ -496,6 +587,7 @@ function hangUp() {
   remoteAudio.srcObject = null;
   joined = false;
   releaseScreenWakeLock();
+  clearSystemCallControls();
   showCall();
   joinButton.disabled = false;
   joinButton.hidden = true;
@@ -537,6 +629,11 @@ muteButton.addEventListener("click", () => {
   muteButton.setAttribute("aria-pressed", String(!track.enabled));
 });
 audioOutputButton.addEventListener("click", async () => {
+  if (typeof remoteAudio.setSinkId !== "function" || typeof navigator.mediaDevices?.selectAudioOutput !== "function") {
+    showAudioOutputHelp();
+    logEvent("audio-output-picker-unavailable", { device: deviceFamily() });
+    return;
+  }
   try {
     const device = await navigator.mediaDevices.selectAudioOutput();
     await remoteAudio.setSinkId(device.deviceId);
@@ -546,7 +643,9 @@ audioOutputButton.addEventListener("click", async () => {
   } catch (error) {
     logEvent("audio-output-change-failed", { name: error.name, message: error.message });
     audioOutputNote.hidden = false;
-    audioOutputNote.textContent = `Could not switch output: ${error.message || "the browser blocked the change."}`;
+    audioOutputNote.textContent = error.name === "NotAllowedError"
+      ? "Audio output was not changed. Try again or use your device’s audio controls."
+      : `Could not switch output: ${error.message || "Use your device’s audio controls."}`;
   }
 });
 hangupButton.addEventListener("click", () => hangUp());
