@@ -933,7 +933,7 @@ function hangUp() {
 }
 
 $("create").addEventListener("click", createCall);
-joinButton.addEventListener("click", joinCall);
+joinButton.addEventListener("click", () => joinCall());
 $("check-service").addEventListener("click", checkService);
 $("copy-diagnostics").addEventListener("click", async () => {
   try {
