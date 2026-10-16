@@ -23,6 +23,8 @@ const chooseAudioOutputButton = $("choose-audio-output");
 const hangupButton = $("hangup");
 const newCallButton = $("new-call");
 const remoteAudio = $("remote-audio");
+const clientBuild = new URL(import.meta.url).searchParams.get("build") || "unversioned";
+const clientScriptUrl = import.meta.url;
 const peerConnections = new Map();
 const pendingCandidates = new Map();
 let roomId = location.pathname.match(/^\/call\/([a-zA-Z0-9_-]+)\/?$/)?.[1] || null;
@@ -68,6 +70,8 @@ function renderDiagnostics() {
   const report = {
     capturedAt: new Date().toISOString(),
     app: "QuietCall",
+    clientBuild,
+    clientScriptUrl,
     page: `${location.origin}${roomId ? "/call/[redacted]" : "/"}`,
     browser: navigator.userAgent,
     device: deviceFamily(),
@@ -610,12 +614,16 @@ async function joinCall(generation = callGeneration) {
   const joiningRoom = roomId;
   const joiningToken = token;
   let joiningStream;
+  logEvent("join-flow-started", { generation, activeGeneration: callGeneration, generationType: typeof generation, roomAvailable: Boolean(joiningRoom), visibilityState: document.visibilityState });
   joinButton.disabled = true;
   setJoinButtonPresentation("Joining call…", true, true);
   await requestScreenWakeLock();
-  if (generation !== callGeneration) return;
+  if (generation !== callGeneration) {
+    logEvent("join-flow-aborted", { stage: "after-wake-lock", generation, activeGeneration: callGeneration });
+    return;
+  }
   activateAudioSession();
-  logEvent("microphone-requested");
+  logEvent("microphone-requested", { generation });
   setStatus("Allow microphone access", "Your browser will ask for microphone permission.");
   try {
     joiningStream = await navigator.mediaDevices.getUserMedia({
@@ -933,7 +941,10 @@ function hangUp() {
 }
 
 $("create").addEventListener("click", createCall);
-joinButton.addEventListener("click", () => joinCall());
+joinButton.addEventListener("click", () => {
+  logEvent("join-button-clicked", { disabled: joinButton.disabled, clientBuild });
+  void joinCall();
+});
 $("check-service").addEventListener("click", checkService);
 $("copy-diagnostics").addEventListener("click", async () => {
   try {
@@ -1019,3 +1030,5 @@ if (roomId) {
   showHome();
 }
 logEvent("app-loaded", { protocol: location.protocol });
+document.addEventListener("freeze", () => logEvent("page-frozen", { joined }));
+document.addEventListener("resume", () => logEvent("page-resumed", { joined }));
