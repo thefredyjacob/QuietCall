@@ -7,7 +7,7 @@
     <meta name="description" content="QuietCall makes simple, private one-to-one voice calls.">
     <title>QuietCall — clear voice, simple call</title>
     <link rel="stylesheet" href="/style.css">
-    <script type="module" src="/app.js"></script>
+    <script type="module" src="/app.js?build=debug-20261016-1"></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to call controls</a>
@@ -50,29 +50,33 @@
           </div>
         </div>
         <p id="detail" class="detail call-detail"></p>
-        <p id="foreground-hint" class="foreground-hint" role="status" aria-live="polite" hidden></p>
-
         <section class="call-stage" aria-label="Call participants">
           <article class="participant participant-you">
             <div class="participant-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M3 10v4m4-7v10m5-14v18m5-13v8m4-6v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
-            <div class="participant-name"><strong>You</strong><span>This device</span></div>
+            <div class="participant-name"><strong>You</strong><span id="local-participant-status">This device</span></div>
           </article>
-          <article class="participant participant-guest">
+          <article id="remote-participant" class="participant participant-guest">
             <div class="participant-orb guest-orb" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M3 10v4m4-7v10m5-14v18m5-13v8m4-6v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>
-            <div class="participant-name"><strong>Other caller</strong><span>Voice connection</span></div>
+            <div class="participant-name"><strong>Other caller</strong><span id="remote-participant-status">Waiting for caller</span></div>
           </article>
         </section>
 
         <div id="invite" class="invite" hidden>
-          <div class="invite-copy"><span class="invite-label">CALL LINK</span><span class="invite-help">Share with one person</span></div>
-          <button id="copy" class="secondary copy-link">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7m2.7 4a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.7-1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            <span>Copy invite link</span>
-          </button>
+          <div class="invite-copy"><span class="invite-label">CALL LINK</span><span class="invite-help">Share with one person</span><p id="share-note" class="share-note" role="status" aria-live="polite" hidden></p></div>
+          <div class="invite-actions">
+            <button id="share-link" class="secondary copy-link" type="button">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7m2.7 4a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.7-1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              <span>Share link</span>
+            </button>
+            <button id="copy-link" class="secondary copy-link" type="button">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              <span>Copy link</span>
+            </button>
+          </div>
         </div>
 
         <div class="controls">
-          <button id="join" class="control-button control-join" hidden>
+          <button id="join" class="control-button control-join join-attention" aria-busy="false" hidden>
             <span class="control-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M7 3h3l2 5-2 1.5a14 14 0 0 0 4.5 4.5L16 12l5 2v3c0 1.1-.9 2-2 2C10.7 19 5 13.3 5 6c0-1.7.7-3 2-3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
             <span class="control-label">Join call</span>
           </button>
@@ -83,9 +87,13 @@
             </span>
             <span id="mute-label" class="control-label">Mute</span>
           </button>
-          <button id="audio-output" class="control-button" aria-label="Choose audio output" hidden>
+          <button id="pip-open" class="control-button" aria-label="Open picture-in-picture call window" hidden>
+            <span class="control-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="15" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M13 12h6v5h-6z" fill="currentColor"/></svg></span>
+            <span class="control-label">Mini call</span>
+          </button>
+          <button id="audio-output" class="control-button" aria-label="Audio Settings" aria-controls="audio-device-panel" aria-expanded="false" hidden>
             <span class="control-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4 10v4h4l5 4V6l-5 4H4Zm12-1a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span class="control-label">Audio output</span>
+            <span class="control-label">Audio Settings</span>
           </button>
           <button id="hangup" class="control-button control-hangup" hidden>
             <span class="control-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4 15.5c4.8-4 11.2-4 16 0l-2.1 3.1a1.5 1.5 0 0 1-1.8.5l-2.3-1a1.5 1.5 0 0 1-.9-1.4v-1.1a13 13 0 0 0-1.8-.1 13 13 0 0 0-1.8.1v1.1a1.5 1.5 0 0 1-.9 1.4l-2.3 1a1.5 1.5 0 0 1-1.8-.5L4 15.5Z" fill="currentColor"/></svg></span>
@@ -95,9 +103,14 @@
             <span class="control-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M12 5v14m-7-7h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
             <span class="control-label">New call</span>
           </button>
-          <button id="new-call" class="primary" hidden>New call</button>
         </div>
-        <p id="audio-output-note" class="audio-output-note" role="status" hidden>Change speaker or headphones from your device’s audio controls.</p>
+        <p id="pip-note" class="audio-output-note" role="status" hidden></p>
+        <section id="audio-device-panel" class="audio-device-panel" aria-label="Audio devices" hidden>
+          <label for="audio-input">Microphone<select id="audio-input"><option value="">System default microphone</option></select></label>
+          <label for="audio-output-select">Speaker or headphones<select id="audio-output-select"><option value="">System default output</option></select></label>
+          <button id="choose-audio-output" class="secondary" type="button" hidden>More output devices…</button>
+          <p id="audio-output-note" class="audio-output-note" role="status" hidden>Change speaker or headphones from your device’s audio controls.</p>
+        </section>
 
         <details id="diagnostics" class="diagnostics">
           <summary><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M3 12h3l2-6 4 12 2-6h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Connection diagnostics</summary>
