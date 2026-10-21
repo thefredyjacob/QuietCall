@@ -178,11 +178,27 @@ function activateSystemCallControls() {
   if (!session?.setActionHandler) return;
   try {
     if (typeof MediaMetadata === "function") session.metadata = new MediaMetadata({ title: "QuietCall voice call", artist: "QuietCall" });
-    session.setActionHandler("stop", hangUp);
     session.playbackState = "playing";
-    logEvent("system-call-control", { action: "stop", active: true });
   } catch (error) {
-    logEvent("system-call-control-unavailable", { name: error.name, message: error.message });
+    logEvent("media-session-setup-failed", { name: error.name, message: error.message });
+  }
+  try {
+    session.setActionHandler("togglemicrophone", toggleMute);
+    if (typeof session.setMicrophoneActive === "function") session.setMicrophoneActive(Boolean(localStream?.getAudioTracks()[0]?.enabled));
+    logEvent("media-session-action", { action: "togglemicrophone", active: true });
+  } catch (error) {
+    logEvent("media-session-action-unavailable", { action: "togglemicrophone", name: error.name, message: error.message });
+  }
+  try {
+    session.setActionHandler("hangup", hangUp);
+    logEvent("media-session-action", { action: "hangup", active: true });
+  } catch (error) {
+    try {
+      session.setActionHandler("stop", hangUp);
+      logEvent("media-session-action", { action: "stop", active: true });
+    } catch (fallbackError) {
+      logEvent("media-session-action-unavailable", { action: "hangup", name: fallbackError.name, message: fallbackError.message });
+    }
   }
 }
 
@@ -290,6 +306,11 @@ function syncMuteControls() {
   $("mute-label").textContent = track.enabled ? "Mute" : "Unmute";
   muteButton.setAttribute("aria-label", track.enabled ? "Mute microphone" : "Unmute microphone");
   muteButton.setAttribute("aria-pressed", String(!track.enabled));
+  try {
+    if (typeof navigator.mediaSession?.setMicrophoneActive === "function") navigator.mediaSession.setMicrophoneActive(track.enabled);
+  } catch (error) {
+    logEvent("media-session-mic-state-failed", { name: error.name, message: error.message });
+  }
   syncPictureInPicture();
 }
 
@@ -302,10 +323,13 @@ function toggleMute() {
 }
 
 function clearSystemCallControls() {
-  try { navigator.mediaSession?.setActionHandler("stop", null); } catch {}
+  for (const action of ["togglemicrophone", "hangup", "stop"]) {
+    try { navigator.mediaSession?.setActionHandler(action, null); } catch {}
+  }
   try { navigator.mediaSession?.setActionHandler("enterpictureinpicture", null); } catch {}
   try {
     if (navigator.mediaSession) {
+      if (typeof navigator.mediaSession.setMicrophoneActive === "function") navigator.mediaSession.setMicrophoneActive(false);
       navigator.mediaSession.playbackState = "none";
       navigator.mediaSession.metadata = null;
     }

@@ -60,6 +60,7 @@ button:active:not(:disabled) { filter: brightness(.88); }
 .brand { gap: 9px; color: var(--text); text-decoration: none; font-size: 15px; font-weight: 650; }
 .brand-mark { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid #4a5e52; border-radius: 10px; color: var(--accent); background: var(--accent-soft); }
 .brand-mark svg { width: 19px; height: 19px; }
+.dev-badge { padding: 2px 6px; border: 1px solid #66572f; border-radius: 5px; color: #e4c477; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
 .brand-home { margin-left: 2px; color: var(--muted); font-size: 13px; font-weight: 450; }
 .brand:hover .brand-home { color: var(--text); }
 
