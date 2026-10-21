@@ -38,6 +38,7 @@ let callGeneration = 0;
 let screenWakeLock = null;
 let hiddenAt = null;
 let audioSessionActive = false;
+let lastBackgroundSnapshotAt = 0;
 let pipWindow = null;
 let pipOpening = false;
 let shareNoteTimer = null;
@@ -67,6 +68,9 @@ function logApi(event, details, key) {
 }
 
 function renderDiagnostics() {
+  const localAudioTrack = localStream?.getAudioTracks()[0] || null;
+  const remoteAudioTracks = remoteAudio.srcObject?.getAudioTracks() || [];
+  const session = navigator.mediaSession;
   const report = {
     capturedAt: new Date().toISOString(),
     app: "QuietCall",
@@ -85,12 +89,82 @@ function renderDiagnostics() {
     audioSessionApiAvailable: Boolean(navigator.audioSession),
     screenWakeLockAvailable: Boolean(navigator.wakeLock?.request),
     mediaSessionAvailable: Boolean(navigator.mediaSession?.setActionHandler),
+    mediaSession: session ? {
+      playbackState: session.playbackState,
+      title: session.metadata?.title || null,
+      artist: session.metadata?.artist || null,
+    } : null,
+    documentVisibility: document.visibilityState,
+    localMicrophone: getTrackDiagnostics(localAudioTrack),
+    remoteAudio: {
+      hasStream: Boolean(remoteAudio.srcObject),
+      paused: remoteAudio.paused,
+      muted: remoteAudio.muted,
+      readyState: remoteAudio.readyState,
+      currentTime: Number.isFinite(remoteAudio.currentTime) ? Math.round(remoteAudio.currentTime * 10) / 10 : null,
+      tracks: remoteAudioTracks.map(getTrackDiagnostics),
+    },
     documentPictureInPictureAvailable: typeof window.documentPictureInPicture?.requestWindow === "function",
     pictureInPictureOpen: Boolean(pipWindow && !pipWindow.closed),
     events: diagnosticEvents,
     peers: [...peerDiagnostics.values()],
   };
   $("diagnostic-report").textContent = JSON.stringify(report, null, 2);
+}
+
+function getTrackDiagnostics(track) {
+  if (!track) return null;
+  return { readyState: track.readyState, enabled: track.enabled, muted: track.muted };
+}
+
+function watchAudioTrack(track, direction) {
+  for (const event of ["mute", "unmute", "ended"]) {
+    track.addEventListener(event, () => logEvent(`${direction}-audio-track-state`, { event, ...getTrackDiagnostics(track) }));
+  }
+}
+
+async function logCallStateSnapshot(reason, hiddenForMs = hiddenAt === null ? 0 : Date.now() - hiddenAt) {
+  const generation = callGeneration;
+  const peers = await Promise.all([...peerConnections.values()].map(async (pc, index) => {
+    let audio = [];
+    let microphoneLevel = null;
+    try {
+      const stats = await pc.getStats();
+      audio = [...stats.values()].filter((item) => item.kind === "audio" && ["inbound-rtp", "outbound-rtp", "remote-inbound-rtp"].includes(item.type)).map((item) => ({
+        direction: item.type === "inbound-rtp" ? "received" : item.type === "outbound-rtp" ? "sent" : "remote-received",
+        bytes: item.bytesReceived ?? item.bytesSent ?? null,
+        packets: item.packetsReceived ?? item.packetsSent ?? null,
+        packetsLost: item.packetsLost ?? null,
+      }));
+      const source = [...stats.values()].find((item) => item.type === "media-source" && item.kind === "audio");
+      if (source) microphoneLevel = { audioLevel: source.audioLevel ?? null, totalAudioEnergy: source.totalAudioEnergy ?? null };
+    } catch (error) {
+      audio = [{ statsError: error.name || "Error", message: error.message }];
+    }
+    return { peer: index + 1, connectionState: pc.connectionState, iceConnectionState: pc.iceConnectionState, microphoneLevel, audio };
+  }));
+  if (generation !== callGeneration) return;
+  const localAudioTrack = localStream?.getAudioTracks()[0] || null;
+  const remoteTracks = remoteAudio.srcObject?.getAudioTracks() || [];
+  logEvent("call-state-snapshot", {
+    reason,
+    visibilityState: document.visibilityState,
+    hiddenForMs,
+    localMicrophone: getTrackDiagnostics(localAudioTrack),
+    remoteAudio: {
+      hasStream: Boolean(remoteAudio.srcObject),
+      paused: remoteAudio.paused,
+      muted: remoteAudio.muted,
+      readyState: remoteAudio.readyState,
+      currentTime: Number.isFinite(remoteAudio.currentTime) ? Math.round(remoteAudio.currentTime * 10) / 10 : null,
+      tracks: remoteTracks.map(getTrackDiagnostics),
+    },
+    mediaSession: navigator.mediaSession ? {
+      playbackState: navigator.mediaSession.playbackState,
+      title: navigator.mediaSession.metadata?.title || null,
+    } : null,
+    peers,
+  });
 }
 
 function getToken(id) {
@@ -183,18 +257,27 @@ function activateSystemCallControls() {
     logEvent("media-session-setup-failed", { name: error.name, message: error.message });
   }
   try {
-    session.setActionHandler("togglemicrophone", toggleMute);
+    session.setActionHandler("togglemicrophone", () => {
+      logEvent("media-session-action-invoked", { action: "togglemicrophone", visibilityState: document.visibilityState });
+      toggleMute();
+    });
     if (typeof session.setMicrophoneActive === "function") session.setMicrophoneActive(Boolean(localStream?.getAudioTracks()[0]?.enabled));
     logEvent("media-session-action", { action: "togglemicrophone", active: true });
   } catch (error) {
     logEvent("media-session-action-unavailable", { action: "togglemicrophone", name: error.name, message: error.message });
   }
   try {
-    session.setActionHandler("hangup", hangUp);
+    session.setActionHandler("hangup", () => {
+      logEvent("media-session-action-invoked", { action: "hangup", visibilityState: document.visibilityState });
+      hangUp();
+    });
     logEvent("media-session-action", { action: "hangup", active: true });
   } catch (error) {
     try {
-      session.setActionHandler("stop", hangUp);
+      session.setActionHandler("stop", () => {
+        logEvent("media-session-action-invoked", { action: "stop", visibilityState: document.visibilityState });
+        hangUp();
+      });
       logEvent("media-session-action", { action: "stop", active: true });
     } catch (fallbackError) {
       logEvent("media-session-action-unavailable", { action: "hangup", name: fallbackError.name, message: fallbackError.message });
@@ -518,13 +601,34 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     hiddenAt = Date.now();
     logEvent("page-hidden", { joined });
+    if (joined) void logCallStateSnapshot("page-hidden", 0);
   } else {
-    logEvent("page-visible", { joined, hiddenForMs: hiddenAt === null ? 0 : Date.now() - hiddenAt });
+    const hiddenForMs = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+    logEvent("page-visible", { joined, hiddenForMs });
     hiddenAt = null;
     closeCallPictureInPicture();
+    if (joined) void logCallStateSnapshot("page-visible", hiddenForMs);
     if (joined) requestScreenWakeLock();
   }
 });
+
+document.addEventListener("freeze", () => {
+  logEvent("page-frozen", { joined, visibilityState: document.visibilityState });
+});
+
+document.addEventListener("resume", () => {
+  logEvent("page-resumed", { joined, visibilityState: document.visibilityState });
+  if (joined) void logCallStateSnapshot("page-resumed");
+});
+
+for (const event of ["playing", "pause", "stalled", "ended", "error"]) {
+  remoteAudio.addEventListener(event, () => logEvent("remote-audio-element-state", {
+    event,
+    paused: remoteAudio.paused,
+    readyState: remoteAudio.readyState,
+    currentTime: Number.isFinite(remoteAudio.currentTime) ? Math.round(remoteAudio.currentTime * 10) / 10 : null,
+  }));
+}
 
 async function configureIceServers(generation, room, peerToken) {
   try {
@@ -660,6 +764,7 @@ async function joinCall(generation = callGeneration) {
     }
     localStream = joiningStream;
     const track = localStream.getAudioTracks()[0];
+    if (track) watchAudioTrack(track, "local-microphone");
     const settings = track?.getSettings() || {};
     logEvent("microphone-ready", { settings: Object.fromEntries(["sampleRate", "channelCount", "echoCancellation", "noiseSuppression", "autoGainControl"].filter((key) => settings[key] !== undefined).map((key) => [key, settings[key]])), enabled: track?.enabled });
     await post("join", { roomId: joiningRoom, token: joiningToken });
@@ -753,6 +858,7 @@ function getPeerConnection(peerId, generation = callGeneration) {
   pc.ontrack = ({ streams }) => {
     if (generation !== callGeneration) return;
     remoteAudio.srcObject = streams[0];
+    for (const track of streams[0]?.getAudioTracks() || []) watchAudioTrack(track, "remote-audio");
     logEvent("remote-audio-track", { streamCount: streams.length });
     remoteAudio.play().then(() => {
       if (generation === callGeneration && joined) activateSystemCallControls();
@@ -900,10 +1006,15 @@ async function updateConnectionType(pc, generation = callGeneration) {
 
 function startStats(generation = callGeneration) {
   clearInterval(statsTimer);
+  lastBackgroundSnapshotAt = 0;
   statsTimer = setInterval(() => {
     if (generation !== callGeneration) return clearInterval(statsTimer);
     for (const pc of peerConnections.values()) {
       if (pc.connectionState === "connected") updateConnectionType(pc, generation);
+    }
+    if (joined && document.visibilityState === "hidden" && Date.now() - lastBackgroundSnapshotAt >= 15000) {
+      lastBackgroundSnapshotAt = Date.now();
+      void logCallStateSnapshot("background-heartbeat");
     }
   }, 5000);
 }
@@ -1054,5 +1165,3 @@ if (roomId) {
   showHome();
 }
 logEvent("app-loaded", { protocol: location.protocol });
-document.addEventListener("freeze", () => logEvent("page-frozen", { joined }));
-document.addEventListener("resume", () => logEvent("page-resumed", { joined }));
